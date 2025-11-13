@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable">
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+
+  <Commands package="repotxtPackageGuid">
+    <Bitmaps>
+      <Bitmap guid="repotxtImages" href="Resources\repotxt.png" usedList="1"/>
+    </Bitmaps>
+
+    <Groups>
+      <!-- Наша группа на тулбаре Solution Explorer -->
+      <Group guid="repotxtCommandSet" id="SEToolbarGroup" priority="0x0300">
+        <!-- Тулбар Solution Explorer -->
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_TOOL_PROJWIN"/>
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <!-- Единственная кнопка: открыть наше окно -->
+      <Button guid="repotxtCommandSet" id="ShowExplorerCommandId" priority="0x0100" type="Button">
+        <Parent guid="repotxtCommandSet" id="SEToolbarGroup"/>
+        
+        <Icon guid="repotxtImages" id="bmpRepotxt" />
+        <Strings>
+          <CommandName>repotxt.ShowExplorer</CommandName>
+          <ButtonText>repotxt</ButtonText>
+          <CanonicalName>repotxt.ShowExplorer</CanonicalName>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <Symbols>
+	<GuidSymbol name="repotxtPackageGuid" value="{483a8767-861e-42d5-896b-ff189190d8fb}" />
+    <GuidSymbol name="repotxtImages" value="{B2E3E9B1-9A7F-4A9E-A4B7-6E2D8C6F7D10}">
+      <IDSymbol name="bmpRepotxt" value="1" />
+    </GuidSymbol>
+    <GuidSymbol name="repotxtCommandSet" value="{7C6ECB0D-7F2F-49B4-9B1E-F78284616F50}">
+      <IDSymbol name="SEToolbarGroup" value="0x3000" />
+      <IDSymbol name="ShowExplorerCommandId" value="0x0300" />
+    </GuidSymbol>
+  </Symbols>
+</CommandTable>

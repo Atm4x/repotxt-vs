@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable">
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+
+  <Commands>
+    <Groups>
+      <!-- ����������� ���� Solution Explorer -->
+      <Group guid="repotxtCommandSet" id="repotxtCtxGroup" priority="0x0100">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_ITEMNODE"/>
+      </Group>
+
+      <!-- ���� Tools -->
+      <Group guid="repotxtCommandSet" id="repotxtToolsGroup" priority="0x0200">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS"/>
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <!-- Toggle � ����������� ���� -->
+      <Button guid="repotxtCommandSet" id="ToggleExcludeCommandId" priority="0x0100" type="Button">
+        <Parent guid="repotxtCommandSet" id="repotxtCtxGroup"/>
+        <Strings>
+          <CommandName>repotxt.ToggleExclude</CommandName>
+          <ButtonText>repotxt: Toggle Include/Exclude</ButtonText>
+          <CanonicalName>repotxt.ToggleExclude</CanonicalName>
+        </Strings>
+      </Button>
+
+      <!-- Generate � Tools -->
+      <Button guid="repotxtCommandSet" id="GenerateReportCommandId" priority="0x0200" type="Button">
+        <Parent guid="repotxtCommandSet" id="repotxtToolsGroup"/>
+        <Strings>
+          <CommandName>repotxt.GenerateReport</CommandName>
+          <ButtonText>repotxt: Generate Report</ButtonText>
+          <CanonicalName>repotxt.GenerateReport</CanonicalName>
+        </Strings>
+      </Button>
+
+      <!-- ������� Tool Window: View -> Other Windows -->
+      <Button guid="repotxtCommandSet" id="ShowExplorerCommandId" priority="0x0300" type="Button">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_VIEW_OTHERWINDOWS"/>
+        <Strings>
+          <CommandName>repotxt.ShowExplorer</CommandName>
+          <ButtonText>repotxt Explorer</ButtonText>
+          <CanonicalName>repotxt.ShowExplorer</CanonicalName>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="repotxtCommandSet" value="{7C6ECB0D-7F2F-49B4-9B1E-F78284616F50}">
+      <IDSymbol name="repotxtCtxGroup" value="0x1000" />
+      <IDSymbol name="repotxtToolsGroup" value="0x1001" />
+      <IDSymbol name="ToggleExcludeCommandId" value="0x0100" />
+      <IDSymbol name="GenerateReportCommandId" value="0x0200" />
+      <IDSymbol name="ShowExplorerCommandId" value="0x0300" />
+    </GuidSymbol>
+  </Symbols>
+</CommandTable>

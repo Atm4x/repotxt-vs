@@ -17,9 +17,14 @@ namespace repotxt.UI
         public bool IsDirectory { get; }
         public ObservableCollection<NodeVM> Children { get; } = new();
 
-        public bool HasChildren => IsDirectory && Children.Count > 0;
+        private bool _childrenLoaded;
+        private bool _hasAnyChildren;
+        public bool HasAnyChildren
+        {
+            get => _hasAnyChildren;
+            private set { if (_hasAnyChildren != value) { _hasAnyChildren = value; OnPropertyChanged(); } }
+        }
 
-        // Визуал: включён (true) = НЕ исключён
         private bool _isIncluded;
         public bool IsIncluded
         {
@@ -27,34 +32,20 @@ namespace repotxt.UI
             set
             {
                 if (value == _isIncluded) return;
-
-                // хотим: true = включён => excluded=false
                 var desiredExcluded = !value;
                 var currentExcluded = _core.IsPathEffectivelyExcluded(FullPath);
                 if (desiredExcluded != currentExcluded)
                 {
                     _core.ToggleExclude(FullPath);
                 }
-
                 _isIncluded = !_core.IsPathEffectivelyExcluded(FullPath);
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(IsExcluded));
-                OnPropertyChanged(nameof(EyeGlyph));
                 RefreshRecursive();
             }
         }
 
-        public bool IsExcluded => !IsIncluded;
-
-        // Глифы (Segoe MDL2 Assets)
-        public string EyeGlyph => IsExcluded ? "\uE8F5" /*Hide*/ : "\uE890" /*View*/;
-        public string FolderGlyphClosed => "\uE8B7"; // Folder
-        public string FolderGlyphOpen => "\uE838"; // OpenFolder
-        public string FileGlyph => "\uE7C3"; // Page
-
         public event PropertyChangedEventHandler? PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string? p = null) =>
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
+        private void OnPropertyChanged([CallerMemberName] string? p = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
 
         private NodeVM(string name, string fullPath, bool isDir, RepoAnalyzerCore core)
         {
@@ -62,12 +53,11 @@ namespace repotxt.UI
             FullPath = fullPath;
             IsDirectory = isDir;
             _core = core;
-
             _isIncluded = !_core.IsPathEffectivelyExcluded(fullPath);
+            _hasAnyChildren = isDir && HasEntriesSafe(fullPath);
         }
 
-        public static NodeVM Empty(string text) =>
-            new NodeVM(text, "", false, RepotxtServices.Core!) { _isIncluded = true };
+        public static NodeVM Empty(string text) => new NodeVM(text, "", false, RepotxtServices.Core!) { _isIncluded = true };
 
         public static NodeVM FromPath(string path, RepoAnalyzerCore core)
         {
@@ -76,38 +66,53 @@ namespace repotxt.UI
             return new NodeVM(name, path, Directory.Exists(path), core);
         }
 
-        public static ObservableCollection<NodeVM> BuildChildren(string directoryPath, RepoAnalyzerCore core)
+        private static bool HasEntriesSafe(string dir)
         {
-            var list = new ObservableCollection<NodeVM>();
-
             try
             {
-                var dirs = Directory.EnumerateDirectories(directoryPath)
-                    .Select(p => FromPath(p, core)).OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase);
-                var files = Directory.EnumerateFiles(directoryPath)
-                    .Select(p => FromPath(p, core)).OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase);
+                using var e = Directory.EnumerateFileSystemEntries(dir).GetEnumerator();
+                return e.MoveNext();
+            }
+            catch { return false; }
+        }
+
+        public void EnsureChildrenLoaded(int depth = 1)
+        {
+            if (!IsDirectory) return;
+            if (_childrenLoaded) return;
+            LoadChildren(depth);
+            _childrenLoaded = true;
+            HasAnyChildren = Children.Count > 0 || HasEntriesSafe(FullPath);
+        }
+
+        public void LoadChildren(int depth = 1)
+        {
+            if (!IsDirectory) return;
+            try
+            {
+                var dirs = Directory.EnumerateDirectories(FullPath)
+                    .OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase);
+                var files = Directory.EnumerateFiles(FullPath)
+                    .OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase);
 
                 foreach (var d in dirs)
                 {
-                    foreach (var ch in BuildChildren(d.FullPath, core))
-                        d.Children.Add(ch);
-                    list.Add(d);
+                    var child = FromPath(d, _core);
+                    Children.Add(child);
+                    if (depth > 1) child.EnsureChildrenLoaded(depth - 1);
                 }
                 foreach (var f in files)
-                    list.Add(f);
+                {
+                    Children.Add(FromPath(f, _core));
+                }
             }
-            catch { /* ignore IO exceptions */ }
-
-            return list;
+            catch { }
         }
 
         public void RefreshRecursive()
         {
             _isIncluded = !_core.IsPathEffectivelyExcluded(FullPath);
             OnPropertyChanged(nameof(IsIncluded));
-            OnPropertyChanged(nameof(IsExcluded));
-            OnPropertyChanged(nameof(EyeGlyph));
-
             foreach (var c in Children)
                 c.RefreshRecursive();
         }

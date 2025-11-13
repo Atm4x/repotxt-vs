@@ -5,21 +5,30 @@
              MinWidth="300" MinHeight="200"
              Background="{DynamicResource Brush.PanelBg}"
              Foreground="{DynamicResource Brush.Text}">
-
     <UserControl.Resources>
-        <SolidColorBrush x:Key="Brush.PanelBg"      Color="#1E1E1E"/>
-        <SolidColorBrush x:Key="Brush.Text"         Color="#FFFFFF"/>
-        <SolidColorBrush x:Key="Brush.Border"       Color="#2D2D30"/>
-        <SolidColorBrush x:Key="Brush.ButtonBg"     Color="#2D2D30"/>
+        <SolidColorBrush x:Key="Brush.PanelBg" Color="#1E1E1E"/>
+        <SolidColorBrush x:Key="Brush.Text" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="Brush.Border" Color="#2D2D30"/>
+        <SolidColorBrush x:Key="Brush.ButtonBg" Color="#2D2D30"/>
         <SolidColorBrush x:Key="Brush.ButtonBg.Hover" Color="#3E3E42"/>
         <SolidColorBrush x:Key="Brush.ButtonBg.Pressed" Color="#4A4A4A"/>
         <SolidColorBrush x:Key="Brush.ItemSelected" Color="#2A2D2E"/>
         <SolidColorBrush x:Key="Brush.ExcludedText" Color="#9AA0A6"/>
+        <SolidColorBrush x:Key="Brush.Primary" Color="#007ACC"/>
+        <SolidColorBrush x:Key="Brush.Primary.Hover" Color="#118DDD"/>
+        <SolidColorBrush x:Key="Brush.Primary.Pressed" Color="#0B5FA5"/>
+
+        <Geometry x:Key="Icon.ChevronRight">M3,2 L11,8 3,14 Z</Geometry>
+        <Geometry x:Key="Icon.ChevronDown">M2,5 L8,13 14,5 Z</Geometry>
+        <Geometry x:Key="Icon.FolderClosed">M2,6 L6,6 8,8 14,8 14,14 2,14 Z</Geometry>
+        <Geometry x:Key="Icon.FolderOpen">M2,8 L6,8 8,10 14,10 12,14 2,14 Z</Geometry>
+        <Geometry x:Key="Icon.File">M3,3 L11,3 13,5 13,14 3,14 Z</Geometry>
 
         <Style x:Key="ToolbarButton" TargetType="Button">
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Padding"  Value="8,2"/>
-            <Setter Property="Margin"   Value="2"/>
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="2"/>
             <Setter Property="Background" Value="{DynamicResource Brush.ButtonBg}"/>
             <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}"/>
@@ -31,15 +40,8 @@
                         <Border x:Name="border"
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                SnapsToDevicePixels="true">
-                            <ContentPresenter x:Name="contentPresenter"
-                                              Focusable="False"
-                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                              Margin="{TemplateBinding Padding}"
-                                              RecognizesAccessKey="True"
-                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"
-                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -54,23 +56,76 @@
             </Setter>
         </Style>
 
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource ToolbarButton}">
+            <Setter Property="Background" Value="{DynamicResource Brush.Primary}"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding Background}"
+                                BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{StaticResource Brush.Primary.Hover}"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource Brush.Primary.Hover}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{StaticResource Brush.Primary.Pressed}"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource Brush.Primary.Pressed}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="IconToggle" TargetType="ToggleButton">
-            <Setter Property="Width" Value="20"/>
-            <Setter Property="Height" Value="20"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Background" Value="{DynamicResource Brush.ButtonBg}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
-            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Cursor" Value="Arrow"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border Background="Transparent">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{StaticResource Brush.ButtonBg.Hover}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{StaticResource Brush.ButtonBg.Pressed}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="{StaticResource Brush.ButtonBg.Hover}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="TreeExpander" TargetType="ToggleButton">
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -100,13 +155,6 @@
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource Brush.ItemSelected}"/>
                             </Trigger>
-                            <MultiTrigger>
-                                <MultiTrigger.Conditions>
-                                    <Condition Property="IsMouseOver" Value="True" />
-                                    <Condition Property="IsSelected" Value="False" />
-                                </MultiTrigger.Conditions>
-                                <Setter TargetName="HeaderBorder" Property="Background" Value="Transparent"/>
-                            </MultiTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -125,10 +173,10 @@
 
                 <ToggleButton Grid.Column="0">
                     <ToggleButton.Style>
-                        <Style TargetType="ToggleButton" BasedOn="{StaticResource IconToggle}">
+                        <Style TargetType="ToggleButton" BasedOn="{StaticResource TreeExpander}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasChildren}" Value="True">
+                                <DataTrigger Binding="{Binding HasAnyChildren}" Value="True">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                             </Style.Triggers>
@@ -138,45 +186,39 @@
                         <Binding RelativeSource="{RelativeSource AncestorType=TreeViewItem}"
                                  Path="IsExpanded" Mode="TwoWay"/>
                     </ToggleButton.IsChecked>
-                    <TextBlock FontFamily="Segoe MDL2 Assets"
-                               Foreground="{DynamicResource Brush.Text}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Text" Value="&#xE76C;"/>
+                    <Path Width="12" Height="12" Fill="{DynamicResource Brush.Text}">
+                        <Path.Style>
+                            <Style TargetType="Path">
+                                <Setter Property="Data" Value="{StaticResource Icon.ChevronRight}"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsExpanded}" Value="True">
-                                        <Setter Property="Text" Value="&#xE70D;"/>
+                                        <Setter Property="Data" Value="{StaticResource Icon.ChevronDown}"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                        </Path.Style>
+                    </Path>
                 </ToggleButton>
 
-                <TextBlock Grid.Column="1"
-                           FontFamily="Segoe MDL2 Assets"
-                           Foreground="{DynamicResource Brush.Text}"
-                           VerticalAlignment="Center"
-                           HorizontalAlignment="Center">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Text" Value="&#xE7C3;"/>
+                <Path Grid.Column="1" Width="14" Height="14" Fill="#FFFFFF">
+                    <Path.Style>
+                        <Style TargetType="Path">
+                            <Setter Property="Data" Value="{StaticResource Icon.File}"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsDirectory}" Value="True">
-                                    <Setter Property="Text" Value="&#xE8B7;"/>
+                                    <Setter Property="Data" Value="{StaticResource Icon.FolderClosed}"/>
                                 </DataTrigger>
                                 <MultiDataTrigger>
                                     <MultiDataTrigger.Conditions>
                                         <Condition Binding="{Binding IsDirectory}" Value="True"/>
                                         <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsExpanded}" Value="True"/>
                                     </MultiDataTrigger.Conditions>
-                                    <Setter Property="Text" Value="&#xE838;"/>
+                                    <Setter Property="Data" Value="{StaticResource Icon.FolderOpen}"/>
                                 </MultiDataTrigger>
                             </Style.Triggers>
                         </Style>
-                    </TextBlock.Style>
-                </TextBlock>
+                    </Path.Style>
+                </Path>
 
                 <TextBlock Grid.Column="2"
                            Text="{Binding Name}"
@@ -216,8 +258,7 @@
                         <ToggleButton.IsChecked>
                             <Binding Path="IsIncluded" Mode="TwoWay" UpdateSourceTrigger="PropertyChanged"/>
                         </ToggleButton.IsChecked>
-                        <TextBlock FontFamily="Segoe MDL2 Assets"
-                                   Foreground="{DynamicResource Brush.Text}">
+                        <TextBlock FontFamily="Segoe MDL2 Assets" Foreground="{DynamicResource Brush.Text}">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Text" Value="&#xE890;"/>
@@ -244,15 +285,31 @@
         <DockPanel Grid.Row="0" Margin="6,6,6,4">
             <TextBlock VerticalAlignment="Center" Text="repotxt Explorer" FontSize="12" FontWeight="SemiBold"/>
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
-                <Button Style="{StaticResource ToolbarButton}" Click="Refresh_Click">Refresh</Button>
-                <Button Style="{StaticResource ToolbarButton}" Click="Generate_Click">Generate</Button>
-                <Button Style="{StaticResource ToolbarButton}" Click="Reset_Click">Reset</Button>
+                <Button Style="{StaticResource ToolbarButton}" ToolTip="Refresh" Click="Refresh_Click">
+                    <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE72C;"/>
+                </Button>
+                <Button Style="{StaticResource PrimaryButton}" ToolTip="Generate report" Click="Generate_Click">
+                    <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE7C3;"/>
+                </Button>
+                <Button Style="{StaticResource ToolbarButton}" ToolTip="Reset rules" Click="Reset_Click">
+                    <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE894;"/>
+                </Button>
+                <Button Style="{StaticResource ToolbarButton}" ToolTip="Reset to defaults" Click="Defaults_Click">
+                    <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE777;"/>
+                </Button>
+                <ToggleButton x:Name="WrapToggle" Style="{StaticResource IconToggle}" ToolTip="Toggle wrap" Click="WrapToggle_Click">
+                    <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE7C2;"/>
+                </ToggleButton>
             </StackPanel>
         </DockPanel>
 
-        <TreeView Grid.Row="1"
+        <TreeView x:Name="Tree"
+                  Grid.Row="1"
                   ItemsSource="{Binding RootNodes}"
                   BorderThickness="0"
-                  Background="{DynamicResource Brush.PanelBg}"/>
+                  Background="{DynamicResource Brush.PanelBg}"
+                  VirtualizingStackPanel.IsVirtualizing="True"
+                  VirtualizingStackPanel.VirtualizationMode="Recycling"
+                  ScrollViewer.CanContentScroll="True"/>
     </Grid>
 </UserControl>

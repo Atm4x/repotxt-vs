@@ -1,4 +1,5 @@
-﻿using EnvDTE;
+﻿// UI/RepoExplorerControl.xaml.cs
+using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -9,6 +10,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
 
 namespace repotxt.UI
 {
@@ -136,6 +140,29 @@ namespace repotxt.UI
             if (Core == null) return;
             Core.WrapLongLines = WrapToggle.IsChecked == true;
             await Task.CompletedTask;
+        }
+
+        private void TreeViewItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var dep = e.OriginalSource as DependencyObject;
+            if (FindAncestor<ToggleButton>(dep) != null) return;
+            var item = FindAncestor<TreeViewItem>(dep);
+            if (item == null) return;
+            if (item.DataContext is NodeVM vm && vm.IsDirectory)
+            {
+                item.IsExpanded = !item.IsExpanded;
+                e.Handled = true;
+            }
+        }
+
+        private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
+        {
+            while (current != null)
+            {
+                if (current is T t) return t;
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return null;
         }
     }
 }

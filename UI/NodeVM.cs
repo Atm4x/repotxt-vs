@@ -11,14 +11,15 @@ namespace repotxt.UI
     public class NodeVM : INotifyPropertyChanged
     {
         private readonly RepoAnalyzerCore _core;
+        public string SortKey => (IsDirectory ? "0_" : "1_") + Name.ToLowerInvariant();
         public string Name { get; }
         public string FullPath { get; }
         public bool IsDirectory { get; }
         public ObservableCollection<NodeVM> Children { get; } = new();
 
-        public string Icon => IsDirectory ? "📁" : "📄";
-        public string SortKey => (IsDirectory ? "0_" : "1_") + Name.ToLowerInvariant();
+        public bool HasChildren => IsDirectory && Children.Count > 0;
 
+        // Визуал: включён (true) = НЕ исключён
         private bool _isIncluded;
         public bool IsIncluded
         {
@@ -27,21 +28,29 @@ namespace repotxt.UI
             {
                 if (value == _isIncluded) return;
 
-                // Мы работаем в терминах Include: true = не исключён
-                // Если желаемое состояние отличается — вызываем Toggle в core
-                var currentExcluded = _core.IsPathEffectivelyExcluded(FullPath);
+                // хотим: true = включён => excluded=false
                 var desiredExcluded = !value;
-                if (currentExcluded != desiredExcluded)
+                var currentExcluded = _core.IsPathEffectivelyExcluded(FullPath);
+                if (desiredExcluded != currentExcluded)
                 {
                     _core.ToggleExclude(FullPath);
                 }
 
                 _isIncluded = !_core.IsPathEffectivelyExcluded(FullPath);
                 OnPropertyChanged();
-                // Обновим детей и родителей (визуально)
+                OnPropertyChanged(nameof(IsExcluded));
+                OnPropertyChanged(nameof(EyeGlyph));
                 RefreshRecursive();
             }
         }
+
+        public bool IsExcluded => !IsIncluded;
+
+        // Глифы (Segoe MDL2 Assets)
+        public string EyeGlyph => IsExcluded ? "\uE8F5" /*Hide*/ : "\uE890" /*View*/;
+        public string FolderGlyphClosed => "\uE8B7"; // Folder
+        public string FolderGlyphOpen => "\uE838"; // OpenFolder
+        public string FileGlyph => "\uE7C3"; // Page
 
         public event PropertyChangedEventHandler? PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string? p = null) =>
@@ -53,6 +62,7 @@ namespace repotxt.UI
             FullPath = fullPath;
             IsDirectory = isDir;
             _core = core;
+
             _isIncluded = !_core.IsPathEffectivelyExcluded(fullPath);
         }
 
@@ -79,8 +89,6 @@ namespace repotxt.UI
 
                 foreach (var d in dirs)
                 {
-                    // Добавляем папку, и сразу наполняем её (для простоты)
-                    d.Children.Clear();
                     foreach (var ch in BuildChildren(d.FullPath, core))
                         d.Children.Add(ch);
                     list.Add(d);
@@ -95,9 +103,10 @@ namespace repotxt.UI
 
         public void RefreshRecursive()
         {
-            // Пересчитать IsIncluded по core
             _isIncluded = !_core.IsPathEffectivelyExcluded(FullPath);
             OnPropertyChanged(nameof(IsIncluded));
+            OnPropertyChanged(nameof(IsExcluded));
+            OnPropertyChanged(nameof(EyeGlyph));
 
             foreach (var c in Children)
                 c.RefreshRecursive();

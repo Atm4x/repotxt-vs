@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using Newtonsoft.Json;
 using System.Threading.Tasks;
 
 namespace repotxt.Core
@@ -16,6 +15,10 @@ namespace repotxt.Core
     public sealed class RepoAnalyzerCore
     {
         private readonly AsyncPackage _package;
+        private IVsSolution? _vsSolution;
+        private uint _solutionEventsCookie;
+        private VsSolutionEvents? _eventsSink;
+
         private string? _solutionRoot;
         private string? _solutionName;
         private string? _stateFilePath;
@@ -50,41 +53,111 @@ namespace repotxt.Core
         public string? SolutionRoot => _solutionRoot;
         public string? SolutionName => _solutionName;
 
+        public event EventHandler? SolutionChanged;
+
         private async Task InitializeAsync()
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-            var vsSolution = await _package.GetServiceAsync(typeof(SVsSolution)) as IVsSolution;
-            if (vsSolution != null)
-            {
-                vsSolution.GetSolutionInfo(out var solDir, out var solFile, out _);
-                if (!string.IsNullOrEmpty(solDir) && Directory.Exists(solDir))
-                {
-                    _solutionRoot = solDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    _solutionName = !string.IsNullOrEmpty(solFile)
-                        ? Path.GetFileNameWithoutExtension(solFile)
-                        : new DirectoryInfo(_solutionRoot).Name;
+            _vsSolution = await _package.GetServiceAsync(typeof(SVsSolution)) as IVsSolution;
 
-                    _stateFilePath = Path.Combine(_solutionRoot, ".repotxt.state.json");
-                    LoadState();
-                    return;
+            // Первая попытка прочитать текущее решение
+            await RefreshSolutionInfoAsync();
+
+            // Подписка на события открытия/закрытия решения
+            if (_vsSolution != null && _solutionEventsCookie == 0)
+            {
+                _eventsSink = new VsSolutionEvents(this);
+                _vsSolution.AdviseSolutionEvents(_eventsSink, out _solutionEventsCookie);
+            }
+        }
+
+        // Явно перечитать информацию о решении. Возвращает true, если решение открыто.
+        public async Task<bool> RefreshSolutionInfoAsync()
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            string? solDir = null;
+            string? solFile = null;
+
+            if (_vsSolution != null)
+            {
+                _vsSolution.GetSolutionInfo(out solDir, out solFile, out _);
+            }
+
+            if (string.IsNullOrEmpty(solDir))
+            {
+                // Fallback через DTE
+                var dte = await _package.GetServiceAsync(typeof(SDTE)) as DTE2;
+                var full = dte?.Solution?.FullName;
+                if (!string.IsNullOrEmpty(full))
+                {
+                    solDir = Path.GetDirectoryName(full);
+                    solFile = full;
                 }
             }
 
-            // fallback через DTE
-            var dte = await _package.GetServiceAsync(typeof(SDTE)) as DTE2;
-            if (dte != null && dte.Solution != null && !string.IsNullOrEmpty(dte.Solution.FullName))
+            var oldRoot = _solutionRoot;
+
+            if (!string.IsNullOrEmpty(solDir) && Directory.Exists(solDir))
             {
-                var solPath = dte.Solution.FullName;
-                var solDir = Path.GetDirectoryName(solPath);
-                if (!string.IsNullOrEmpty(solDir))
+                _solutionRoot = solDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                _solutionName = !string.IsNullOrEmpty(solFile)
+                    ? Path.GetFileNameWithoutExtension(solFile)
+                    : new DirectoryInfo(_solutionRoot).Name;
+
+                _stateFilePath = Path.Combine(_solutionRoot, ".repotxt.state.json");
+                LoadState();
+
+                if (!StringComparer.OrdinalIgnoreCase.Equals(oldRoot, _solutionRoot))
                 {
-                    _solutionRoot = solDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                    _solutionName = Path.GetFileNameWithoutExtension(solPath);
-                    _stateFilePath = Path.Combine(_solutionRoot, ".repotxt.state.json");
-                    LoadState();
+                    SolutionChanged?.Invoke(this, EventArgs.Empty);
                 }
+                return true;
             }
+
+            // Решение закрыто
+            if (_solutionRoot != null)
+            {
+                _solutionRoot = null;
+                _solutionName = null;
+                _stateFilePath = null;
+                _manualIncludes.Clear();
+                _manualExcludes.Clear();
+                SolutionChanged?.Invoke(this, EventArgs.Empty);
+            }
+            return false;
+        }
+
+        private sealed class VsSolutionEvents : IVsSolutionEvents
+        {
+            private readonly RepoAnalyzerCore _core;
+            public VsSolutionEvents(RepoAnalyzerCore core) => _core = core;
+
+            public int OnAfterOpenProject(IVsHierarchy pHierarchy, int fAdded) => VSConstants.S_OK;
+            public int OnQueryCloseProject(IVsHierarchy pHierarchy, int fRemoving, ref int pfCancel) => VSConstants.S_OK;
+            public int OnBeforeCloseProject(IVsHierarchy pHierarchy, int fRemoved) => VSConstants.S_OK;
+            public int OnAfterLoadProject(IVsHierarchy pStubHierarchy, IVsHierarchy pRealHierarchy) => VSConstants.S_OK;
+
+            public int OnQueryUnloadProject(IVsHierarchy pRealHierarchy, ref int pfCancel) => VSConstants.S_OK;
+            public int OnBeforeUnloadProject(IVsHierarchy pRealHierarchy, IVsHierarchy pStubHierarchy) => VSConstants.S_OK;
+
+            public int OnQueryCloseSolution(object pUnkReserved, ref int pfCancel) => VSConstants.S_OK;
+            public int OnBeforeCloseSolution(object pUnkReserved) => VSConstants.S_OK;
+
+            public int OnAfterCloseSolution(object pUnkReserved)
+            {
+                _ = _core.RefreshSolutionInfoAsync();
+                return VSConstants.S_OK;
+            }
+
+            public int OnAfterOpenSolution(object pUnkReserved, int fNew)
+            {
+                _ = _core.RefreshSolutionInfoAsync();
+                return VSConstants.S_OK;
+            }
+
+            public int OnAfterMergeSolution(object pUnkReserved) => VSConstants.S_OK;
         }
 
         #region State
@@ -128,13 +201,10 @@ namespace repotxt.Core
                 };
 
                 var json = JsonConvert.SerializeObject(state, Formatting.Indented);
-                // без BOM
                 File.WriteAllText(_stateFilePath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             }
             catch { /* ignore */ }
         }
-
-
         #endregion
 
         public void ResetManualRules()
@@ -147,10 +217,7 @@ namespace repotxt.Core
         #region Public API (toggle + report)
         public void ToggleExcludeMultiple(IEnumerable<string> fullPaths)
         {
-            foreach (var p in fullPaths)
-            {
-                ToggleExclude(p);
-            }
+            foreach (var p in fullPaths) ToggleExclude(p);
             SaveState();
         }
 
@@ -160,28 +227,23 @@ namespace repotxt.Core
             var isDir = Directory.Exists(p);
             var isCurrentlyExcluded = IsPathEffectivelyExcluded(p);
 
-            // Сначала уберём старые записи
             _manualIncludes.Remove(p);
             _manualExcludes.Remove(p);
 
             if (isCurrentlyExcluded)
             {
-                // Сделать включённым
                 _manualIncludes.Add(p);
                 if (isDir)
                 {
-                    // Удалить все exclude внутри этой папки
                     var toRemove = _manualExcludes.Where(x => IsDescendantOf(x, p)).ToList();
                     foreach (var r in toRemove) _manualExcludes.Remove(r);
                 }
             }
             else
             {
-                // Сделать исключённым
                 _manualExcludes.Add(p);
                 if (isDir)
                 {
-                    // Удалить все include внутри этой папки
                     var toRemove = _manualIncludes.Where(x => IsDescendantOf(x, p)).ToList();
                     foreach (var r in toRemove) _manualIncludes.Remove(r);
                 }
@@ -197,16 +259,13 @@ namespace repotxt.Core
             var sb = new StringBuilder();
             var name = _solutionName ?? new DirectoryInfo(_solutionRoot).Name;
 
-            // 1) Структура папок (только видимые)
             var flat = new List<string>();
             BuildFlatStructure(_solutionRoot, flat);
 
             sb.AppendLine($"Folder Structure: {name}");
-            foreach (var line in flat)
-                sb.AppendLine(line);
+            foreach (var line in flat) sb.AppendLine(line);
             sb.AppendLine();
 
-            // 2) Контент файлов (только видимые файлы)
             var files = EnumerateVisibleFiles(_solutionRoot).ToList();
             foreach (var file in files)
             {
@@ -224,11 +283,7 @@ namespace repotxt.Core
         #region Traversal/Include logic
         private string Norm(string path)
         {
-            try
-            {
-                path = Path.GetFullPath(path);
-            }
-            catch { /* ignore */ }
+            try { path = Path.GetFullPath(path); } catch { }
             return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
@@ -267,11 +322,8 @@ namespace repotxt.Core
         public bool IsPathEffectivelyExcluded(string fullPath)
         {
             var p = Norm(fullPath);
-
-            // Прямое включение всегда побеждает
             if (_manualIncludes.Contains(p)) return false;
 
-            // Проверяем исключения вверх по дереву
             var cur = p;
             while (!string.IsNullOrEmpty(cur))
             {
@@ -283,7 +335,6 @@ namespace repotxt.Core
             return false;
         }
 
-        // Для папки: можно быть "визуально исключённой", но если внутри есть ручные include — надо заходить внутрь.
         private bool IsFolderVisuallyExcluded(string folderPath)
         {
             if (!IsPathEffectivelyExcluded(folderPath)) return false;
@@ -310,17 +361,14 @@ namespace repotxt.Core
             {
                 var dir = stack.Pop();
 
-                // Если папка — дефолтно-скрытая и в ней нет ручных инклюдов — пропускаем целиком
                 if (IsDefaultSkippedDirectory(dir) && !FolderContainsManualIncludes(dir))
                     continue;
 
-                // Если папка "визуально исключена" — пропускаем целиком
                 if (IsFolderVisuallyExcluded(dir))
                     continue;
 
-                // Файлы
                 IEnumerable<string> files = Enumerable.Empty<string>();
-                try { files = Directory.EnumerateFiles(dir); } catch { /* ignore */ }
+                try { files = Directory.EnumerateFiles(dir); } catch { }
 
                 foreach (var f in files)
                 {
@@ -329,14 +377,10 @@ namespace repotxt.Core
                     yield return f;
                 }
 
-                // Дочерние папки
                 IEnumerable<string> subdirs = Enumerable.Empty<string>();
-                try { subdirs = Directory.EnumerateDirectories(dir); } catch { /* ignore */ }
+                try { subdirs = Directory.EnumerateDirectories(dir); } catch { }
 
-                foreach (var sd in subdirs)
-                {
-                    stack.Push(sd);
-                }
+                foreach (var sd in subdirs) stack.Push(sd);
             }
         }
 
@@ -344,25 +388,13 @@ namespace repotxt.Core
         {
             void Walk(string dir)
             {
-                // дефолтно-скрытые
                 if (IsDefaultSkippedDirectory(dir) && !FolderContainsManualIncludes(dir))
                     return;
 
-                // дочерние записи
                 var entries = new List<(string path, bool isDir)>();
+                try { entries.AddRange(Directory.EnumerateDirectories(dir).Select(d => (d, true))); } catch { }
+                try { entries.AddRange(Directory.EnumerateFiles(dir).Select(f => (f, false))); } catch { }
 
-                try
-                {
-                    entries.AddRange(Directory.EnumerateDirectories(dir).Select(d => (d, true)));
-                }
-                catch { /* ignore */ }
-                try
-                {
-                    entries.AddRange(Directory.EnumerateFiles(dir).Select(f => (f, false)));
-                }
-                catch { /* ignore */ }
-
-                // сортировка: папки вверх, затем по имени
                 entries.Sort((a, b) =>
                 {
                     var byType = (a.isDir ? 0 : 1).CompareTo(b.isDir ? 0 : 1);
@@ -376,14 +408,9 @@ namespace repotxt.Core
                     {
                         if (!IsFolderVisuallyExcluded(path))
                         {
-                            // добавляем строку папки
                             var rel = ToPosix(Rel(path)) + "/";
                             result.Add(rel);
                             Walk(path);
-                        }
-                        else
-                        {
-                            // если папка визуально исключена — внутрь не заходим
                         }
                     }
                     else
@@ -395,7 +422,6 @@ namespace repotxt.Core
                     }
                 }
             }
-
             Walk(root);
         }
 

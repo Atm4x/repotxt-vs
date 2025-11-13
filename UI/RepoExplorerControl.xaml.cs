@@ -16,18 +16,28 @@ namespace repotxt.UI
     {
         public ObservableCollection<NodeVM> RootNodes { get; } = new();
 
+        private RepoAnalyzerCore? Core => RepotxtServices.Core;
+
         public RepoExplorerControl()
         {
             InitializeComponent();
             DataContext = this;
+
+            if (Core is not null)
+            {
+                Core.SolutionChanged += (_, __) => _ = BuildTreeAsync();
+            }
+
             _ = BuildTreeAsync();
         }
-
-        private RepoAnalyzerCore? Core => RepotxtServices.Core;
 
         private async Task BuildTreeAsync()
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            // На случай, если окно открылось раньше, чем VS поднял решение
+            if (Core is not null)
+                await Core.RefreshSolutionInfoAsync();
 
             RootNodes.Clear();
 
@@ -37,7 +47,6 @@ namespace repotxt.UI
                 return;
             }
 
-            // Заполняем корень содержимым (папки + файлы)
             var root = Core.SolutionRoot;
             var nodes = NodeVM.BuildChildren(root, Core).OrderBy(n => n.SortKey).ToList();
             foreach (var n in nodes)
@@ -58,6 +67,7 @@ namespace repotxt.UI
         private async void Generate_Click(object sender, RoutedEventArgs e)
         {
             if (Core == null) return;
+
             var report = await Core.GenerateReportAsync();
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -69,11 +79,7 @@ namespace repotxt.UI
             if (doc != null)
             {
                 var textDoc = doc.Object("TextDocument") as TextDocument;
-                if (textDoc != null)
-                {
-                    var ep = textDoc.StartPoint.CreateEditPoint();
-                    ep.Insert(report);
-                }
+                textDoc?.StartPoint.CreateEditPoint().Insert(report);
             }
         }
     }

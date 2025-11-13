@@ -1,4 +1,5 @@
-﻿using Microsoft.VisualStudio.Shell;
+﻿using Microsoft.VisualStudio;
+using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using System;
 using System.ComponentModel.Design;
@@ -10,6 +11,7 @@ namespace repotxt.Commands
     {
         public const int CommandId = 0x0300;
         public static readonly Guid CommandSet = new Guid("7c6ecb0d-7f2f-49b4-9b1e-f78284616f50");
+
         private readonly AsyncPackage _package;
 
         private ShowExplorerCommand(AsyncPackage package, OleMenuCommandService mcs)
@@ -19,16 +21,18 @@ namespace repotxt.Commands
 
             var cmdId = new CommandID(CommandSet, CommandId);
             var cmd = new OleMenuCommand(OnInvoke, cmdId);
+
+            // На тулбаре SE нужно явно включать/обновлять статус
             cmd.BeforeQueryStatus += (s, e) =>
             {
                 var c = (OleMenuCommand)s;
-                c.Visible = true;
-                c.Checked = true;
                 c.Supported = true;
-                c.Enabled = true; // всегда включена
+                c.Visible = true;
+                c.Enabled = true;
+                c.Text = "repotxt";
             };
+
             mcs.AddCommand(cmd);
-            var a = mcs.FindCommand(cmdId);
         }
 
         public static async Task InitializeAsync(AsyncPackage package)
@@ -39,7 +43,7 @@ namespace repotxt.Commands
             _ = new ShowExplorerCommand(package, mcs);
         }
 
-        // ВАЖНО: не async void
+        // Без async void — все исключения поймаем
         private void OnInvoke(object sender, EventArgs e)
         {
             ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
@@ -47,23 +51,18 @@ namespace repotxt.Commands
                 try
                 {
                     await _package.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    var window = await _package.ShowToolWindowAsync(typeof(UI.RepoToolWindow), 0, true, _package.DisposalToken);
-                    if (window == null || window.Frame == null)
-                        throw new InvalidOperationException("Cannot create repotxt window (frame is null).");
+                    var pane = await _package.ShowToolWindowAsync(typeof(UI.RepoToolWindow), 0, true, _package.DisposalToken);
+                    if (pane?.Frame is not IVsWindowFrame frame)
+                        throw new InvalidOperationException("Cannot create repotxt window.");
+                    frame.Show(); // докинг задаётся атрибутом ProvideToolWindow
                 }
                 catch (Exception ex)
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    VsShellUtilities.ShowMessageBox(
-                        _package,
-                        ex.ToString(),
-                        "repotxt error",
-                        OLEMSGICON.OLEMSGICON_CRITICAL,
-                        OLEMSGBUTTON.OLEMSGBUTTON_OK,
-                        OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+                    VsShellUtilities.ShowMessageBox(_package, ex.ToString(), "repotxt error",
+                        OLEMSGICON.OLEMSGICON_CRITICAL, OLEMSGBUTTON.OLEMSGBUTTON_OK, OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
                 }
-            })
-            .FileAndForget("repotxt/ShowExplorer");
+            }).FileAndForget("repotxt/ShowExplorer");
         }
     }
 }

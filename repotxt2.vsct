@@ -21,7 +21,7 @@
         
         <Strings>
           <CommandName>repotxt.ShowExplorer</CommandName>
-          <ButtonText>repotxt</ButtonText>
+          <ButtonText>RepoAnalyzer</ButtonText>
           <CanonicalName>repotxt.ShowExplorer</CanonicalName>
         </Strings>
       </Button>

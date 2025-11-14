@@ -4,6 +4,8 @@ using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using repotxt.Core;
+using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -27,10 +29,15 @@ namespace repotxt.UI
             DataContext = this;
             if (Core is not null)
             {
-                Core.SolutionChanged += async (_, __) => await BuildTreeAsync();
+                Core.SolutionChanged += OnSolutionChanged;
             }
             Loaded += RepoExplorerControl_Loaded;
             Tree.AddHandler(TreeViewItem.ExpandedEvent, new RoutedEventHandler(Tree_Expanded));
+            _ = BuildTreeAsync();
+        }
+
+        private void OnSolutionChanged(object? sender, EventArgs e)
+        {
             _ = BuildTreeAsync();
         }
 
@@ -40,106 +47,167 @@ namespace repotxt.UI
                 WrapToggle.IsChecked = Core.WrapLongLines;
         }
 
+        private sealed class NodeInit
+        {
+            public string Path { get; init; } = "";
+            public bool IsDirectory { get; init; }
+            public bool HasAnyChildren { get; init; }
+            public List<NodeInit>? Children { get; init; }
+        }
+
+        private static bool HasVisibleChildren(RepoAnalyzerCore core, string dir)
+        {
+            try
+            {
+                foreach (var d in Directory.EnumerateDirectories(dir))
+                    if (!core.ShouldHideDirectory(d)) return true;
+                foreach (var f in Directory.EnumerateFiles(dir))
+                    if (!core.ShouldHideFile(f)) return true;
+            }
+            catch { }
+            return false;
+        }
+
+        private static List<NodeInit> BuildLevel(RepoAnalyzerCore core, string root, int depth)
+        {
+            var result = new List<NodeInit>();
+            IEnumerable<string> dirs = Enumerable.Empty<string>();
+            IEnumerable<string> files = Enumerable.Empty<string>();
+            try { dirs = Directory.EnumerateDirectories(root).Where(d => !core.ShouldHideDirectory(d)); } catch { }
+            try { files = Directory.EnumerateFiles(root).Where(f => !core.ShouldHideFile(f)); } catch { }
+
+            foreach (var d in dirs.OrderBy(Path.GetFileName))
+            {
+                List<NodeInit>? children = null;
+                if (depth > 1)
+                {
+                    children = BuildLevel(core, d, depth - 1);
+                }
+                var hasAny = children != null ? children.Count > 0 : HasVisibleChildren(core, d);
+                result.Add(new NodeInit { Path = d, IsDirectory = true, HasAnyChildren = hasAny, Children = children });
+            }
+
+            foreach (var f in files.OrderBy(Path.GetFileName))
+            {
+                result.Add(new NodeInit { Path = f, IsDirectory = false, HasAnyChildren = false, Children = null });
+            }
+
+            return result;
+        }
+
         private async Task BuildTreeAsync()
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            ToggleRefreshUI(true);
             if (Core is not null)
                 await Core.RefreshSolutionInfoAsync();
 
             if (Core?.SolutionRoot == null || !Directory.Exists(Core.SolutionRoot))
             {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 RootNodes.Clear();
                 RootNodes.Add(NodeVM.Empty("No solution opened"));
+                ToggleRefreshUI(false);
                 return;
             }
 
             var root = Core.SolutionRoot;
-            if (RootNodes.Count == 0 || RootNodes.First().FullPath != root)
-            {
-                RootNodes.Clear();
-                try
-                {
-                    var dirs = Directory.EnumerateDirectories(root)
-                        .OrderBy(p => Path.GetFileName(p));
-                    var files = Directory.EnumerateFiles(root)
-                        .OrderBy(p => Path.GetFileName(p));
+            var data = await Task.Run(() => BuildLevel(Core, root, 2));
 
-                    foreach (var d in dirs)
-                    {
-                        var n = NodeVM.FromPath(d, Core);
-                        n.EnsureChildrenLoaded(1);
-                        RootNodes.Add(n);
-                    }
-                    foreach (var f in files)
-                    {
-                        RootNodes.Add(NodeVM.FromPath(f, Core));
-                    }
-                }
-                catch
-                {
-                    RootNodes.Clear();
-                    RootNodes.Add(NodeVM.Empty("Cannot read solution folder"));
-                }
-            }
-            else
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            RootNodes.Clear();
+            foreach (var n in data)
             {
-                foreach (var n in RootNodes) n.RefreshRecursive();
+                var vm = NodeVM.FromPath(n.Path, Core, n.HasAnyChildren);
+                if (n.Children != null && n.Children.Count > 0)
+                {
+                    var children = n.Children.Select(c => NodeVM.FromPath(c.Path, Core, c.HasAnyChildren)).ToList();
+                    vm.SetChildren(children);
+                }
+                RootNodes.Add(vm);
             }
+            ToggleRefreshUI(false);
         }
 
         private void Tree_Expanded(object sender, RoutedEventArgs e)
         {
-            if (e.OriginalSource is TreeViewItem tvi && tvi.DataContext is NodeVM vm)
+            if (e.OriginalSource is TreeViewItem tvi && tvi.DataContext is NodeVM vm && vm.IsDirectory)
             {
-                vm.EnsureChildrenLoaded(1);
+                if (vm.Children.Count > 0) return;
+                _ = ExpandAsync(vm);
             }
         }
 
-        private async void Refresh_Click(object sender, RoutedEventArgs e)
+        private async Task ExpandAsync(NodeVM vm)
         {
-            await BuildTreeAsync();
+            ToggleRefreshUI(true);
+            var data = await Task.Run(() => BuildLevel(Core!, vm.FullPath, 1));
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            var children = data.Select(c => NodeVM.FromPath(c.Path, Core!, c.HasAnyChildren)).ToList();
+            vm.SetChildren(children);
+            ToggleRefreshUI(false);
         }
 
-        private async void Reset_Click(object sender, RoutedEventArgs e)
+        private void Refresh_Click(object sender, RoutedEventArgs e)
+        {
+            _ = BuildTreeAsync();
+        }
+
+        private void Reset_Click(object sender, RoutedEventArgs e)
         {
             Core?.ResetManualRules();
-            foreach (var n in RootNodes) n.RefreshRecursive();
-            await Task.CompletedTask;
+            _ = BuildTreeAsync();
         }
 
-        private async void Defaults_Click(object sender, RoutedEventArgs e)
+        private void Defaults_Click(object sender, RoutedEventArgs e)
         {
             Core?.ResetToDefaults();
             if (Core != null)
                 WrapToggle.IsChecked = Core.WrapLongLines;
-            foreach (var n in RootNodes) n.RefreshRecursive();
-            await Task.CompletedTask;
+            _ = BuildTreeAsync();
         }
 
-        private async void Generate_Click(object sender, RoutedEventArgs e)
+        private void Generate_Click(object sender, RoutedEventArgs e)
+        {
+            _ = GenerateAndOpenReportAsync();
+        }
+
+        private async Task GenerateAndOpenReportAsync()
         {
             if (Core == null) return;
-
             var report = await Core.GenerateReportAsync();
-
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             var dte = await RepotxtServices.Package!.GetServiceAsync(typeof(SDTE)) as DTE2;
-            if (dte == null) return;
-
-            dte.ItemOperations.NewFile(@"General\Text File", "repotxt.md");
-            var doc = dte.ActiveDocument;
-            if (doc != null)
+            if (dte != null)
             {
-                var textDoc = doc.Object("TextDocument") as TextDocument;
-                textDoc?.StartPoint.CreateEditPoint().Insert(report);
+                dte.ItemOperations.NewFile(@"General\Text File", "repotxt.md");
+                var doc = dte.ActiveDocument;
+                if (doc != null)
+                {
+                    var textDoc = doc.Object("TextDocument") as TextDocument;
+                    textDoc?.StartPoint.CreateEditPoint().Insert(report);
+                }
             }
         }
 
-        private async void WrapToggle_Click(object sender, RoutedEventArgs e)
+        private void WrapToggle_Click(object sender, RoutedEventArgs e)
         {
             if (Core == null) return;
             Core.WrapLongLines = WrapToggle.IsChecked == true;
-            await Task.CompletedTask;
+        }
+
+        private void OpenFile(string fullPath)
+        {
+            _ = OpenFileAsync(fullPath);
+        }
+
+        private async Task OpenFileAsync(string fullPath)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            var dte = await RepotxtServices.Package!.GetServiceAsync(typeof(SDTE)) as DTE2;
+            if (dte != null && File.Exists(fullPath))
+            {
+                dte.ItemOperations.OpenFile(fullPath);
+            }
         }
 
         private void TreeViewItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -148,10 +216,17 @@ namespace repotxt.UI
             if (FindAncestor<ToggleButton>(dep) != null) return;
             var item = FindAncestor<TreeViewItem>(dep);
             if (item == null) return;
-            if (item.DataContext is NodeVM vm && vm.IsDirectory)
+            if (item.DataContext is NodeVM vm)
             {
-                item.IsExpanded = !item.IsExpanded;
-                e.Handled = true;
+                if (vm.IsDirectory)
+                {
+                    item.IsExpanded = !item.IsExpanded;
+                    e.Handled = true;
+                }
+                else
+                {
+                    OpenFile(vm.FullPath);
+                }
             }
         }
 
@@ -163,6 +238,11 @@ namespace repotxt.UI
                 current = VisualTreeHelper.GetParent(current);
             }
             return null;
+        }
+
+        private void ToggleRefreshUI(bool busy)
+        {
+            RefreshBtn.IsEnabled = !busy;
         }
     }
 }

@@ -8,21 +8,23 @@
              Foreground="{DynamicResource Brush.Text}">
     <UserControl.Resources>
         <SolidColorBrush x:Key="Brush.PanelBg" Color="#1E1E1E"/>
-        <SolidColorBrush x:Key="Brush.Text" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="Brush.Text" Color="#D0D0D0"/>
         <SolidColorBrush x:Key="Brush.Border" Color="#2D2D30"/>
         <SolidColorBrush x:Key="Brush.ButtonBg" Color="#2D2D30"/>
         <SolidColorBrush x:Key="Brush.ButtonBg.Hover" Color="#3E3E42"/>
         <SolidColorBrush x:Key="Brush.ButtonBg.Pressed" Color="#4A4A4A"/>
         <SolidColorBrush x:Key="Brush.ItemSelected" Color="#2A2D2E"/>
         <SolidColorBrush x:Key="Brush.ItemHover" Color="#2F3235"/>
-        <SolidColorBrush x:Key="Brush.ExcludedText" Color="#9AA0A6"/>
+        <SolidColorBrush x:Key="Brush.ExcludedText" Color="#7A7A7A"/>
         <SolidColorBrush x:Key="Brush.Primary" Color="#007ACC"/>
         <SolidColorBrush x:Key="Brush.Primary.Hover" Color="#118DDD"/>
         <SolidColorBrush x:Key="Brush.Primary.Pressed" Color="#0B5FA5"/>
 
-        <Geometry x:Key="Icon.FolderClosed">M2,6 L6,6 8,8 14,8 14,14 2,14 Z</Geometry>
-        <Geometry x:Key="Icon.FolderOpen">M2,8 L6,8 8,10 14,10 12,14 2,14 Z</Geometry>
-        <Geometry x:Key="Icon.File">M3,3 L11,3 13,5 13,14 3,14 Z</Geometry>
+        <Geometry x:Key="Icon.FolderClosed">M2,7 L6,7 8,9 14,9 14,14 2,14 Z</Geometry>
+        <Geometry x:Key="Icon.FolderOpen">M2,9 L6,9 8,11 14,11 12,14 2,14 Z</Geometry>
+        <Geometry x:Key="Icon.File">M4,2 L11,2 13,4 13,16 4,16 Z M11,2 L13,4</Geometry>
+
+        <ui:LevelToIndentConverter x:Key="LevelToIndentConverter" Indent="22"/>
 
         <Style x:Key="ToolbarButton" TargetType="Button">
             <Setter Property="Width" Value="26"/>
@@ -49,6 +51,9 @@
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="border" Property="Background" Value="{StaticResource Brush.ButtonBg.Pressed}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.6"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -77,6 +82,9 @@
                                 <Setter TargetName="border" Property="Background" Value="{StaticResource Brush.Primary.Pressed}"/>
                                 <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource Brush.Primary.Pressed}"/>
                             </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.6"/>
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -84,8 +92,9 @@
         </Style>
 
         <Style x:Key="IconToggleInline" TargetType="ToggleButton">
-            <Setter Property="Width" Value="24"/>
+            <Setter Property="Width" Value="28"/>
             <Setter Property="Height" Value="22"/>
+            <Setter Property="Padding" Value="2"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
@@ -94,15 +103,17 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
         <Style x:Key="TreeExpander" TargetType="ToggleButton">
-            <Setter Property="Width" Value="16"/>
-            <Setter Property="Height" Value="16"/>
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="12"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
@@ -115,6 +126,16 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsDirectory}" Value="True"/>
+                        <Condition Binding="{Binding HasAnyChildren}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
+            </Style.Triggers>
         </Style>
 
         <Style TargetType="TreeViewItem">
@@ -129,10 +150,13 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <Border x:Name="HeaderBorder" Background="Transparent" Padding="0">
+                            <Border x:Name="HeaderBorder"
+                                    Background="Transparent"
+                                    Cursor="Hand"
+                                    Padding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Converter={StaticResource LevelToIndentConverter}}">
                                 <ContentPresenter ContentSource="Header"/>
                             </Border>
-                            <ItemsPresenter x:Name="ItemsHost" Grid.Row="1" Margin="22,0,0,0"/>
+                            <ItemsPresenter x:Name="ItemsHost" Grid.Row="1"/>
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsExpanded" Value="False">
@@ -141,7 +165,7 @@
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource Brush.ItemSelected}"/>
                             </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
+                            <Trigger SourceName="HeaderBorder" Property="IsMouseOver" Value="True">
                                 <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource Brush.ItemHover}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -155,37 +179,56 @@
             <Grid Height="22" VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="22"/>
-                    <ColumnDefinition Width="18"/>
+                    <ColumnDefinition Width="20"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="ActionsCol"/>
                     <ColumnDefinition Width="6"/>
                 </Grid.ColumnDefinitions>
 
                 <ToggleButton Grid.Column="0" Style="{StaticResource TreeExpander}">
                     <ToggleButton.IsChecked>
-                        <Binding RelativeSource="{RelativeSource AncestorType=TreeViewItem}"
-                                 Path="IsExpanded" Mode="TwoWay"/>
+                        <Binding RelativeSource="{RelativeSource AncestorType=TreeViewItem}" Path="IsExpanded" Mode="TwoWay"/>
                     </ToggleButton.IsChecked>
-                    <TextBlock VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="12" Text=">">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsExpanded}" Value="True">
-                                        <Setter Property="Text" Value="v"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                    <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="10" Text="&#xE76C;" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsExpanded}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="10" Text="&#xE70D;" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsExpanded}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
                 </ToggleButton>
 
-                <Path Grid.Column="1" Width="16" Height="16" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Fill="#FFFFFF">
+                <Path Grid.Column="1" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center">
                     <Path.Style>
                         <Style TargetType="Path">
                             <Setter Property="Data" Value="{StaticResource Icon.File}"/>
+                            <Setter Property="Width" Value="12"/>
+                            <Setter Property="Height" Value="16"/>
+                            <Setter Property="Fill" Value="{DynamicResource Brush.Text}"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsDirectory}" Value="True">
                                     <Setter Property="Data" Value="{StaticResource Icon.FolderClosed}"/>
+                                    <Setter Property="Width" Value="16"/>
+                                    <Setter Property="Height" Value="16"/>
                                 </DataTrigger>
                                 <MultiDataTrigger>
                                     <MultiDataTrigger.Conditions>
@@ -194,6 +237,9 @@
                                     </MultiDataTrigger.Conditions>
                                     <Setter Property="Data" Value="{StaticResource Icon.FolderOpen}"/>
                                 </MultiDataTrigger>
+                                <DataTrigger Binding="{Binding IsIncluded}" Value="False">
+                                    <Setter Property="Fill" Value="{DynamicResource Brush.ExcludedText}"/>
+                                </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </Path.Style>
@@ -202,16 +248,16 @@
                 <TextBlock Grid.Column="2"
                            Text="{Binding Name}"
                            VerticalAlignment="Center"
-                           Margin="6,0,0,0"
+                           Margin="8,0,0,0"
                            TextTrimming="CharacterEllipsis"
-                           Foreground="{DynamicResource Brush.Text}">
+                           TextWrapping="NoWrap">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsIncluded}" Value="False">
-                                    <Setter Property="Opacity" Value="0.55"/>
-                                    <Setter Property="TextDecorations" Value="Strikethrough"/>
                                     <Setter Property="Foreground" Value="{DynamicResource Brush.ExcludedText}"/>
+                                    <Setter Property="TextDecorations" Value="Strikethrough"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
@@ -221,13 +267,13 @@
                 <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
-                            <Setter Property="Opacity" Value="0"/>
+                            <Setter Property="Visibility" Value="Hidden"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
-                                    <Setter Property="Opacity" Value="1"/>
-                                </DataTrigger>
                                 <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsMouseOver}" Value="True">
-                                    <Setter Property="Opacity" Value="1"/>
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
@@ -237,13 +283,17 @@
                         <ToggleButton.IsChecked>
                             <Binding Path="IsIncluded" Mode="TwoWay" UpdateSourceTrigger="PropertyChanged"/>
                         </ToggleButton.IsChecked>
-                        <TextBlock FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Text}">
+                        <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="12" VerticalAlignment="Center" Foreground="#A9A9A9">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Text" Value="&#xE890;"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsIncluded}" Value="False">
                                             <Setter Property="Text" Value="&#xE8F5;"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.ExcludedText}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ToggleButton}, Path=IsMouseOver}" Value="True">
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
@@ -262,9 +312,9 @@
         </Grid.RowDefinitions>
 
         <DockPanel Grid.Row="0" Margin="6,6,6,4">
-            <TextBlock VerticalAlignment="Center" Text="repotxt Explorer" FontSize="12" FontWeight="SemiBold"/>
+            <TextBlock VerticalAlignment="Center" Text="repotxt" FontSize="12" FontWeight="SemiBold"/>
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right">
-                <Button Style="{StaticResource ToolbarButton}" ToolTip="Refresh" Click="Refresh_Click">
+                <Button x:Name="RefreshBtn" Style="{StaticResource ToolbarButton}" ToolTip="Refresh" Click="Refresh_Click">
                     <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE72C;"/>
                 </Button>
                 <Button Style="{StaticResource PrimaryButton}" ToolTip="Generate report" Click="Generate_Click">
@@ -284,11 +334,13 @@
 
         <TreeView x:Name="Tree"
                   Grid.Row="1"
+                  Grid.IsSharedSizeScope="True"
                   ItemsSource="{Binding RootNodes}"
                   BorderThickness="0"
                   Background="{DynamicResource Brush.PanelBg}"
                   VirtualizingStackPanel.IsVirtualizing="True"
                   VirtualizingStackPanel.VirtualizationMode="Recycling"
-                  ScrollViewer.CanContentScroll="True"/>
+                  ScrollViewer.CanContentScroll="True"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
     </Grid>
 </UserControl>

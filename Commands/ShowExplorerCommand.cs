@@ -22,14 +22,12 @@ namespace repotxt.Commands
             var cmdId = new CommandID(CommandSet, CommandId);
             var cmd = new OleMenuCommand(OnInvoke, cmdId);
 
-            // На тулбаре SE нужно явно включать/обновлять статус
             cmd.BeforeQueryStatus += (s, e) =>
             {
                 var c = (OleMenuCommand)s;
                 c.Supported = true;
                 c.Visible = true;
                 c.Enabled = true;
-                c.Text = "repotxt";
             };
 
             mcs.AddCommand(cmd);

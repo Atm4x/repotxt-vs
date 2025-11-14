@@ -1,5 +1,7 @@
-﻿using repotxt.Core;
+﻿// UI/NodeVM.cs
+using repotxt.Core;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
@@ -54,59 +56,41 @@ namespace repotxt.UI
             IsDirectory = isDir;
             _core = core;
             _isIncluded = !_core.IsPathEffectivelyExcluded(fullPath);
-            _hasAnyChildren = isDir && HasEntriesSafe(fullPath);
+            _hasAnyChildren = isDir && HasEntriesSafeFiltered(fullPath, core);
         }
 
         public static NodeVM Empty(string text) => new NodeVM(text, "", false, RepotxtServices.Core!) { _isIncluded = true };
 
-        public static NodeVM FromPath(string path, RepoAnalyzerCore core)
+        public static NodeVM FromPath(string path, RepoAnalyzerCore core) => FromPath(path, core, null);
+
+        public static NodeVM FromPath(string path, RepoAnalyzerCore core, bool? hasAnyChildren)
         {
             var name = Path.GetFileName(path);
             if (string.IsNullOrEmpty(name)) name = path;
-            return new NodeVM(name, path, Directory.Exists(path), core);
+            var vm = new NodeVM(name, path, Directory.Exists(path), core);
+            if (hasAnyChildren.HasValue) vm._hasAnyChildren = hasAnyChildren.Value;
+            return vm;
         }
 
-        private static bool HasEntriesSafe(string dir)
+        private static bool HasEntriesSafeFiltered(string dir, RepoAnalyzerCore core)
         {
             try
             {
-                using var e = Directory.EnumerateFileSystemEntries(dir).GetEnumerator();
-                return e.MoveNext();
+                foreach (var d in Directory.EnumerateDirectories(dir))
+                    if (!core.ShouldHideDirectory(d)) return true;
+                foreach (var f in Directory.EnumerateFiles(dir))
+                    if (!core.ShouldHideFile(f)) return true;
+                return false;
             }
             catch { return false; }
         }
 
-        public void EnsureChildrenLoaded(int depth = 1)
+        public void SetChildren(IEnumerable<NodeVM> items)
         {
-            if (!IsDirectory) return;
-            if (_childrenLoaded) return;
-            LoadChildren(depth);
+            Children.Clear();
+            foreach (var i in items) Children.Add(i);
             _childrenLoaded = true;
-            HasAnyChildren = Children.Count > 0 || HasEntriesSafe(FullPath);
-        }
-
-        public void LoadChildren(int depth = 1)
-        {
-            if (!IsDirectory) return;
-            try
-            {
-                var dirs = Directory.EnumerateDirectories(FullPath)
-                    .OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase);
-                var files = Directory.EnumerateFiles(FullPath)
-                    .OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase);
-
-                foreach (var d in dirs)
-                {
-                    var child = FromPath(d, _core);
-                    Children.Add(child);
-                    if (depth > 1) child.EnsureChildrenLoaded(depth - 1);
-                }
-                foreach (var f in files)
-                {
-                    Children.Add(FromPath(f, _core));
-                }
-            }
-            catch { }
+            HasAnyChildren = Children.Count > 0 || HasEntriesSafeFiltered(FullPath, _core);
         }
 
         public void RefreshRecursive()

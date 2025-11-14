@@ -1,4 +1,5 @@
-﻿using EnvDTE80;
+﻿// Services/RepoAnalyzerCore.cs
+using EnvDTE80;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -28,8 +29,11 @@ namespace repotxt.Core
         private readonly HashSet<string> _manualIncludes = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _manualExcludes = new(StringComparer.OrdinalIgnoreCase);
 
-        private static readonly HashSet<string> DefaultSkipDirs = new(StringComparer.OrdinalIgnoreCase)
-        { ".git", ".vs", "bin", "obj", "node_modules", ".idea", ".vscode", "packages" };
+        private static readonly HashSet<string> HiddenDirNames = new(StringComparer.OrdinalIgnoreCase) { ".git", ".vs", ".idea", ".vscode" };
+        private static readonly string[] HiddenFileGlobs = new[] { "*.sln", "*.slnx", "*.suo", "*.user", ".gitignore" };
+
+        private static readonly HashSet<string> AutoIgnoreDirNames = new(StringComparer.OrdinalIgnoreCase) { "bin", "obj", "node_modules", "packages", "dist", "out", "build" };
+        private static readonly string[] AutoIgnoreFileGlobs = new[] { "*.meta", "*.tmp", "*.log", "*.lock", "*.cache", "*.map", "*.min.*" };
 
         private static readonly HashSet<string> BinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -64,6 +68,7 @@ namespace repotxt.Core
                 if (_wrapLongLines == value) return;
                 _wrapLongLines = value;
                 SaveState();
+                SolutionChanged?.Invoke(this, EventArgs.Empty);
             }
         }
 
@@ -212,15 +217,30 @@ namespace repotxt.Core
             try
             {
                 if (string.IsNullOrEmpty(_stateStorePath)) return;
-                var state = new StateModel
+                var snapshotIncludes = _manualIncludes.ToList();
+                var snapshotExcludes = _manualExcludes.ToList();
+                var wrap = _wrapLongLines;
+                var respect = _respectGitIgnore;
+                var path = _stateStorePath;
+
+                var json = Newtonsoft.Json.JsonConvert.SerializeObject(new StateModel
                 {
-                    Includes = _manualIncludes.ToList(),
-                    Excludes = _manualExcludes.ToList(),
-                    WrapLongLines = _wrapLongLines,
-                    RespectGitIgnore = _respectGitIgnore
-                };
-                var json = JsonConvert.SerializeObject(state, Formatting.Indented);
-                File.WriteAllText(_stateStorePath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                    Includes = snapshotIncludes,
+                    Excludes = snapshotExcludes,
+                    WrapLongLines = wrap,
+                    RespectGitIgnore = respect
+                }, Newtonsoft.Json.Formatting.Indented);
+
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        var dir = Path.GetDirectoryName(path);
+                        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                        File.WriteAllText(path, json, new UTF8Encoding(false));
+                    }
+                    catch { }
+                });
             }
             catch { }
         }
@@ -229,7 +249,9 @@ namespace repotxt.Core
         {
             _manualIncludes.Clear();
             _manualExcludes.Clear();
+            LoadGitIgnore();
             SaveState();
+            SolutionChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public void ResetToDefaults()
@@ -238,13 +260,16 @@ namespace repotxt.Core
             _manualExcludes.Clear();
             _wrapLongLines = false;
             _respectGitIgnore = true;
+            LoadGitIgnore();
             SaveState();
+            SolutionChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public void ToggleExcludeMultiple(IEnumerable<string> fullPaths)
         {
             foreach (var p in fullPaths) ToggleExclude(p);
             SaveState();
+            SolutionChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public void ToggleExclude(string fullPath)
@@ -333,16 +358,45 @@ namespace repotxt.Core
         private static string ToPosix(string p)
             => p.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
 
-        private bool IsDefaultSkippedDirectory(string dirPath)
+        private bool GlobIsMatch(string name, string pattern)
         {
-            var name = new DirectoryInfo(dirPath).Name;
-            return DefaultSkipDirs.Contains(name);
+            var p = Regex.Escape(pattern).Replace(@"\*", ".*").Replace(@"\?", ".");
+            return Regex.IsMatch(name, "^" + p + "$", RegexOptions.IgnoreCase);
         }
 
-        private bool IsDefaultSkippedFile(string filePath)
+        private bool IsAutoExcludedPath(string fullPath)
         {
-            var ext = Path.GetExtension(filePath);
-            return BinaryExtensions.Contains(ext);
+            var p = Norm(fullPath);
+            var isDir = Directory.Exists(p);
+            if (_respectGitIgnore && IsIgnoredByGit(p, isDir)) return true;
+            if (isDir)
+            {
+                var dn = new DirectoryInfo(p).Name;
+                if (AutoIgnoreDirNames.Contains(dn)) return true;
+            }
+            else
+            {
+                var bn = Path.GetFileName(p);
+                foreach (var g in AutoIgnoreFileGlobs)
+                    if (GlobIsMatch(bn, g)) return true;
+                var ext = Path.GetExtension(p);
+                if (BinaryExtensions.Contains(ext)) return true;
+            }
+            return false;
+        }
+
+        public bool ShouldHideDirectory(string dirPath)
+        {
+            var dn = new DirectoryInfo(dirPath).Name;
+            return HiddenDirNames.Contains(dn);
+        }
+
+        public bool ShouldHideFile(string filePath)
+        {
+            var bn = Path.GetFileName(filePath);
+            foreach (var g in HiddenFileGlobs)
+                if (GlobIsMatch(bn, g)) return true;
+            return false;
         }
 
         public bool IsPathEffectivelyExcluded(string fullPath)
@@ -358,15 +412,17 @@ namespace repotxt.Core
                 if (string.IsNullOrEmpty(parent) || parent == cur) break;
                 cur = parent;
             }
+
+            if (IsAutoExcludedPath(p)) return true;
+
             return false;
         }
 
         private bool IsFolderVisuallyExcluded(string folderPath)
         {
-            if (IsPathEffectivelyExcluded(folderPath)) return true;
-            if (_respectGitIgnore && IsIgnoredByGit(folderPath, true) && !FolderContainsManualIncludes(folderPath)) return true;
-            if (IsDefaultSkippedDirectory(folderPath) && !FolderContainsManualIncludes(folderPath)) return true;
-            return false;
+            if (ShouldHideDirectory(folderPath)) return true;
+            if (!IsPathEffectivelyExcluded(folderPath)) return false;
+            return !FolderContainsManualIncludes(folderPath);
         }
 
         private bool FolderContainsManualIncludes(string folderPath)
@@ -389,16 +445,15 @@ namespace repotxt.Core
             {
                 var dir = stack.Pop();
 
-                if (IsFolderVisuallyExcluded(dir))
-                    continue;
+                if (ShouldHideDirectory(dir)) continue;
+                if (IsFolderVisuallyExcluded(dir)) continue;
 
                 IEnumerable<string> files = Enumerable.Empty<string>();
                 try { files = Directory.EnumerateFiles(dir); } catch { }
 
                 foreach (var f in files)
                 {
-                    if (IsDefaultSkippedFile(f)) continue;
-                    if (_respectGitIgnore && IsIgnoredByGit(f, false) && !_manualIncludes.Contains(Norm(f))) continue;
+                    if (ShouldHideFile(f)) continue;
                     if (IsPathEffectivelyExcluded(f)) continue;
                     yield return f;
                 }
@@ -414,8 +469,7 @@ namespace repotxt.Core
         {
             void Walk(string dir)
             {
-                if (IsFolderVisuallyExcluded(dir))
-                    return;
+                if (ShouldHideDirectory(dir)) return;
 
                 var entries = new List<(string path, bool isDir)>();
                 try { entries.AddRange(Directory.EnumerateDirectories(dir).Select(d => (d, true))); } catch { }
@@ -438,11 +492,14 @@ namespace repotxt.Core
                             result.Add(rel);
                             Walk(path);
                         }
+                        else if (FolderContainsManualIncludes(path))
+                        {
+                            Walk(path);
+                        }
                     }
                     else
                     {
-                        if (IsDefaultSkippedFile(path)) continue;
-                        if (_respectGitIgnore && IsIgnoredByGit(path, false) && !_manualIncludes.Contains(Norm(path))) continue;
+                        if (ShouldHideFile(path)) continue;
                         if (IsPathEffectivelyExcluded(path)) continue;
                         var rel = ToPosix(Rel(path));
                         result.Add(rel);
@@ -456,7 +513,8 @@ namespace repotxt.Core
         {
             try
             {
-                if (IsDefaultSkippedFile(filePath))
+                var ext = Path.GetExtension(filePath);
+                if (BinaryExtensions.Contains(ext))
                     return "[Binary file, content not displayed]";
                 return File.ReadAllText(filePath);
             }
@@ -524,8 +582,6 @@ namespace repotxt.Core
         private static Regex? BuildGitIgnoreRegex(string pattern)
         {
             var pat = pattern.Replace("\\", "/").Trim();
-            var neg = false;
-            if (pat.StartsWith("!")) pat = pat.Substring(1);
             var anchored = pat.StartsWith("/");
             pat = pat.TrimStart('/');
             var dirOnly = pat.EndsWith("/");

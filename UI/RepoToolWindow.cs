@@ -8,7 +8,7 @@ namespace repotxt.UI
     {
         public RepoToolWindow() : base(null)
         {
-            this.Caption = "repotxt Explorer";
+            this.Caption = "Repository Analyzer";
             this.Content = new RepoExplorerControl();
         }
     }

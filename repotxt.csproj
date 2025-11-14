@@ -57,6 +57,7 @@
     <Compile Include="repotxtPackage.cs" />
     <Compile Include="Services\RepoAnalyzerCore.cs" />
     <Compile Include="Services\RepotxtServices.cs" />
+    <Compile Include="UI\LevelToIndentConverter.cs" />
     <Compile Include="UI\NodeVM.cs" />
     <Compile Include="UI\RepoExplorerControl.xaml.cs">
       <DependentUpon>RepoExplorerControl.xaml</DependentUpon>

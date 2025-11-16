@@ -23,6 +23,7 @@ namespace repotxt.UI
         public ObservableCollection<NodeVM> RootNodes { get; } = new();
         private RepoAnalyzerCore? Core => RepotxtServices.Core;
         private string? _currentRoot;
+        private string? _lastSolutionRoot;
 
         public static readonly RoutedUICommand NavigateToCommand =
             new RoutedUICommand("NavigateTo", "NavigateTo", typeof(RepoExplorerControl));
@@ -40,11 +41,14 @@ namespace repotxt.UI
             if (Core is not null)
             {
                 Core.SolutionChanged += OnSolutionChanged;
+                _lastSolutionRoot = Core.SolutionRoot;
             }
             Loaded += RepoExplorerControl_Loaded;
 
             CommandBindings.Add(new CommandBinding(NavigateToCommand, NavigateToCommand_Executed, NavigateToCommand_CanExecute));
             CommandBindings.Add(new CommandBinding(ToggleIncludeCommand, ToggleIncludeCommand_Executed, ToggleIncludeCommand_CanExecute));
+            CommandBindings.Add(new CommandBinding(ApplicationCommands.Undo, UndoCommand_Executed, UndoCommand_CanExecute));
+            CommandBindings.Add(new CommandBinding(ApplicationCommands.Redo, RedoCommand_Executed, RedoCommand_CanExecute));
 
             Tree.AddHandler(TreeViewItem.ExpandedEvent, new RoutedEventHandler(Tree_Expanded));
             Tree.AddHandler(TreeViewItem.PreviewMouseLeftButtonDownEvent, new MouseButtonEventHandler(TreeViewItem_PreviewMouseLeftButtonDown), true);
@@ -55,9 +59,31 @@ namespace repotxt.UI
 
         private void OnSolutionChanged(object? sender, EventArgs e)
         {
-            _currentRoot = null;
+            var newRoot = Core?.SolutionRoot;
+            bool rootChanged = false;
+
+            if (!string.IsNullOrEmpty(newRoot) || !string.IsNullOrEmpty(_lastSolutionRoot))
+            {
+                var normNew = NormalizeDirSafe(newRoot);
+                var normLast = NormalizeDirSafe(_lastSolutionRoot);
+                rootChanged = !StringComparer.OrdinalIgnoreCase.Equals(normNew, normLast);
+            }
+
+            _lastSolutionRoot = newRoot;
             _dirCache.Clear();
-            _ = BuildTreeAsync();
+
+            if (rootChanged)
+            {
+                _currentRoot = null;
+                _ = BuildTreeAsync(refreshSolution: true);
+            }
+            else
+            {
+                foreach (var node in RootNodes)
+                    node.RefreshRecursive();
+
+                UpdateCurrentFolderUI();
+            }
         }
 
         private void RepoExplorerControl_Loaded(object sender, RoutedEventArgs e)
@@ -72,19 +98,6 @@ namespace repotxt.UI
             public bool IsDirectory { get; init; }
             public bool HasAnyChildren { get; init; }
             public List<NodeInit>? Children { get; init; }
-        }
-
-        private static bool HasVisibleChildren(RepoAnalyzerCore core, string dir)
-        {
-            try
-            {
-                foreach (var d in Directory.EnumerateDirectories(dir))
-                    if (!core.ShouldHideDirectory(d)) return true;
-                foreach (var f in Directory.EnumerateFiles(dir))
-                    if (!core.ShouldHideFile(f)) return true;
-            }
-            catch { }
-            return false;
         }
 
         private static string NormalizeDir(string path)
@@ -113,18 +126,23 @@ namespace repotxt.UI
             try { dirs = Directory.EnumerateDirectories(root).Where(d => !core.ShouldHideDirectory(d)); } catch { }
             try { files = Directory.EnumerateFiles(root).Where(f => !core.ShouldHideFile(f)); } catch { }
 
-            foreach (var d in dirs.OrderBy(Path.GetFileName))
+            foreach (var d in dirs)
             {
                 List<NodeInit>? children = null;
+                bool hasAny;
                 if (depth > 1)
                 {
                     children = BuildLevel(core, d, depth - 1, cache);
+                    hasAny = children.Count > 0;
                 }
-                var hasAny = children != null ? children.Count > 0 : HasVisibleChildren(core, d);
+                else
+                {
+                    hasAny = true;
+                }
                 result.Add(new NodeInit { Path = d, IsDirectory = true, HasAnyChildren = hasAny, Children = children });
             }
 
-            foreach (var f in files.OrderBy(Path.GetFileName))
+            foreach (var f in files)
             {
                 result.Add(new NodeInit { Path = f, IsDirectory = false, HasAnyChildren = false, Children = null });
             }
@@ -172,10 +190,10 @@ namespace repotxt.UI
             RootNodes.Clear();
             foreach (var n in data)
             {
-                var vm = NodeVM.FromPath(n.Path, Core, n.HasAnyChildren);
+                var vm = NodeVM.FromPath(n.Path, Core, n.HasAnyChildren, 0);
                 if (n.Children != null && n.Children.Count > 0)
                 {
-                    var children = n.Children.Select(c => NodeVM.FromPath(c.Path, Core, c.HasAnyChildren)).ToList();
+                    var children = n.Children.Select(c => NodeVM.FromPath(c.Path, Core, c.HasAnyChildren, 1)).ToList();
                     vm.SetChildren(children);
                 }
                 RootNodes.Add(vm);
@@ -199,7 +217,7 @@ namespace repotxt.UI
             ToggleRefreshUI(true);
             var data = await Task.Run(() => BuildLevel(Core, vm.FullPath, 1, _dirCache));
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            var children = data.Select(c => NodeVM.FromPath(c.Path, Core, c.HasAnyChildren)).ToList();
+            var children = data.Select(c => NodeVM.FromPath(c.Path, Core!, c.HasAnyChildren, vm.Level + 1)).ToList();
             vm.SetChildren(children);
             ToggleRefreshUI(false);
         }
@@ -213,15 +231,37 @@ namespace repotxt.UI
         private void Reset_Click(object sender, RoutedEventArgs e)
         {
             Core?.ResetManualRules();
-            _ = BuildTreeAsync(false);
         }
 
-        private void Defaults_Click(object sender, RoutedEventArgs e)
+        private void HideAll_Click(object sender, RoutedEventArgs e)
         {
-            Core?.ResetToDefaults();
-            if (Core != null)
-                WrapToggle.IsChecked = Core.WrapLongLines;
-            _ = BuildTreeAsync(false);
+            if (Core?.SolutionRoot == null)
+                return;
+
+            var root = _currentRoot;
+            if (string.IsNullOrEmpty(root) || !Directory.Exists(root))
+                return;
+
+            Core.ToggleExclude(root);
+
+            foreach (var node in RootNodes)
+                node.RefreshRecursive();
+
+            UpdateCurrentFolderUI();
+        }
+
+        private static string? NormalizeDirSafe(string? path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return null;
+
+            try { path = Path.GetFullPath(path); } catch { }
+            return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+
+        private void Settings_Click(object sender, RoutedEventArgs e)
+        {
+            // Заглушка: настройки ещё не реализованы
         }
 
         private void Generate_Click(object sender, RoutedEventArgs e)
@@ -378,6 +418,11 @@ namespace repotxt.UI
             {
                 BackBtn.IsEnabled = false;
                 CurrentPathText.Text = string.Empty;
+                if (HideAllBtn != null)
+                {
+                    HideAllBtn.IsEnabled = false;
+                    HideAllIcon.Text = "\uE890";
+                }
                 return;
             }
 
@@ -395,6 +440,13 @@ namespace repotxt.UI
                 solutionRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
                 current.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
                 StringComparison.OrdinalIgnoreCase);
+
+            if (HideAllBtn != null)
+            {
+                HideAllBtn.IsEnabled = true;
+                bool isExcluded = Core.IsPathEffectivelyExcluded(current);
+                HideAllIcon.Text = isExcluded ? "\uE8F5" : "\uE890";
+            }
         }
 
         private static string GetRelativePathForDisplay(string root, string current)
@@ -474,6 +526,26 @@ namespace repotxt.UI
             {
                 vm.IsIncluded = !vm.IsIncluded;
             }
+        }
+
+        private void UndoCommand_CanExecute(object sender, CanExecuteRoutedEventArgs e)
+        {
+            e.CanExecute = Core?.CanUndo ?? false;
+        }
+
+        private void UndoCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+        {
+            Core?.Undo();
+        }
+
+        private void RedoCommand_CanExecute(object sender, CanExecuteRoutedEventArgs e)
+        {
+            e.CanExecute = Core?.CanRedo ?? false;
+        }
+
+        private void RedoCommand_Executed(object sender, ExecutedRoutedEventArgs e)
+        {
+            Core?.Redo();
         }
     }
 }

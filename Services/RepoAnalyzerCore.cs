@@ -29,6 +29,19 @@ namespace repotxt.Core
         private readonly HashSet<string> _manualIncludes = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _manualExcludes = new(StringComparer.OrdinalIgnoreCase);
 
+        private sealed class ManualState
+        {
+            public List<string> Includes { get; init; } = new();
+            public List<string> Excludes { get; init; } = new();
+        }
+
+        private readonly Stack<ManualState> _undoStack = new();
+        private readonly Stack<ManualState> _redoStack = new();
+        private const int MaxUndoStates = 50;
+
+        public bool CanUndo => _undoStack.Count > 0;
+        public bool CanRedo => _redoStack.Count > 0;
+
         private static readonly HashSet<string> HiddenDirNames = new(StringComparer.OrdinalIgnoreCase) { ".git", ".vs", ".idea", ".vscode" };
         private static readonly string[] HiddenFileGlobs = new[] { "*.sln", "*.slnx", "*.suo", "*.user", ".gitignore" };
 
@@ -247,6 +260,10 @@ namespace repotxt.Core
 
         public void ResetManualRules()
         {
+            if (_solutionRoot == null) return;
+
+            PushUndoState();
+
             _manualIncludes.Clear();
             _manualExcludes.Clear();
             LoadGitIgnore();
@@ -256,6 +273,10 @@ namespace repotxt.Core
 
         public void ResetToDefaults()
         {
+            if (_solutionRoot == null) return;
+
+            PushUndoState();
+
             _manualIncludes.Clear();
             _manualExcludes.Clear();
             _wrapLongLines = false;
@@ -267,12 +288,29 @@ namespace repotxt.Core
 
         public void ToggleExcludeMultiple(IEnumerable<string> fullPaths)
         {
-            foreach (var p in fullPaths) ToggleExclude(p);
+            if (_solutionRoot == null) return;
+
+            PushUndoState();
+
+            foreach (var p in fullPaths)
+                ToggleExcludeCore(p);
+
             SaveState();
             SolutionChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public void ToggleExclude(string fullPath)
+        {
+            if (_solutionRoot == null) return;
+
+            PushUndoState();
+
+            ToggleExcludeCore(fullPath);
+
+            SaveState();
+        }
+
+        private void ToggleExcludeCore(string fullPath)
         {
             var p = Norm(fullPath);
             var isDir = Directory.Exists(p);
@@ -299,7 +337,6 @@ namespace repotxt.Core
                     foreach (var r in toRemove) _manualIncludes.Remove(r);
                 }
             }
-            SaveState();
         }
 
         public async Task<string> GenerateReportAsync(string? rootOverride = null)
@@ -326,6 +363,15 @@ namespace repotxt.Core
                 {
                     baseRoot = _solutionRoot;
                 }
+            }
+
+            string RelToBase(string abs)
+            {
+                var a = Norm(abs);
+                var r = Norm(baseRoot) + Path.DirectorySeparatorChar;
+                if (a.StartsWith(r, StringComparison.OrdinalIgnoreCase))
+                    return a.Substring(r.Length);
+                return a;
             }
 
             var includesSnap = new HashSet<string>(
@@ -425,7 +471,7 @@ namespace repotxt.Core
                         {
                             if (!IsFolderVisuallyExcludedLocal(path))
                             {
-                                var rel = ToPosix(Rel(path)) + "/";
+                                var rel = ToPosix(RelToBase(path)) + "/"; // CHANGED
                                 result.Add(rel);
                                 Walk(path);
                             }
@@ -438,7 +484,7 @@ namespace repotxt.Core
                         {
                             if (ShouldHideFile(path)) continue;
                             if (IsPathEffectivelyExcludedLocal(path)) continue;
-                            var rel = ToPosix(Rel(path));
+                            var rel = ToPosix(RelToBase(path)); // CHANGED
                             result.Add(rel);
                         }
                     }
@@ -456,6 +502,7 @@ namespace repotxt.Core
             }
             else
             {
+                // Заголовок по-прежнему показывает путь от корня решения:
                 var rel = ToPosix(Rel(baseRoot)).TrimEnd('/');
                 headerName = $"{name} /{rel.TrimStart('/')}";
             }
@@ -470,7 +517,7 @@ namespace repotxt.Core
             var files = EnumerateVisibleFilesLocal(baseRoot).ToList();
             foreach (var file in files)
             {
-                var rel = ToPosix(Rel(file));
+                var rel = ToPosix(RelToBase(file)); // CHANGED
                 sb.AppendLine($"File: {rel}");
                 sb.Append("Content: ");
                 var content = ReadFileContent(file);
@@ -481,6 +528,7 @@ namespace repotxt.Core
 
             return await Task.FromResult(sb.ToString());
         }
+
         private string Norm(string path)
         {
             try { path = Path.GetFullPath(path); } catch { }
@@ -798,5 +846,56 @@ namespace repotxt.Core
             }
             return ignored;
         }
+
+
+        private ManualState CaptureManualState()
+        {
+            return new ManualState
+            {
+                Includes = _manualIncludes.ToList(),
+                Excludes = _manualExcludes.ToList()
+            };
+        }
+
+        private void PushUndoState()
+        {
+            _undoStack.Push(CaptureManualState());
+            if (_undoStack.Count > MaxUndoStates)
+            {
+                var tmp = _undoStack.Reverse().Take(MaxUndoStates).Reverse().ToArray();
+                _undoStack.Clear();
+                foreach (var s in tmp) _undoStack.Push(s);
+            }
+            _redoStack.Clear();
+        }
+
+        private void RestoreManualState(ManualState state, bool raiseEvent)
+        {
+            _manualIncludes.Clear();
+            _manualExcludes.Clear();
+            foreach (var p in state.Includes) _manualIncludes.Add(p);
+            foreach (var p in state.Excludes) _manualExcludes.Add(p);
+            SaveState();
+            if (raiseEvent)
+                SolutionChanged?.Invoke(this, EventArgs.Empty);
+        }
+        public void Undo()
+        {
+            if (_undoStack.Count == 0) return;
+            var current = CaptureManualState();
+            var prev = _undoStack.Pop();
+            _redoStack.Push(current);
+            RestoreManualState(prev, true);
+        }
+
+        public void Redo()
+        {
+            if (_redoStack.Count == 0) return;
+            var current = CaptureManualState();
+            var next = _redoStack.Pop();
+            _undoStack.Push(current);
+            RestoreManualState(next, true);
+        }
+
     }
 }

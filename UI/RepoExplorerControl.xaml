@@ -5,6 +5,11 @@
              MinWidth="300" MinHeight="200"
              Background="{DynamicResource Brush.PanelBg}"
              Foreground="{DynamicResource Brush.Text}">
+    <UserControl.InputBindings>
+        <KeyBinding Command="ApplicationCommands.Undo" Key="Z" Modifiers="Control"/>
+        <KeyBinding Command="ApplicationCommands.Redo" Key="Z" Modifiers="Control+Shift"/>
+    </UserControl.InputBindings>
+
     <UserControl.Resources>
         <SolidColorBrush x:Key="Brush.PanelBg" Color="#1E1E1E"/>
         <SolidColorBrush x:Key="Brush.NavBarBg" Color="#151515"/>
@@ -23,8 +28,6 @@
         <Geometry x:Key="Icon.FolderClosed">M2,7 L6,7 8,9 14,9 14,14 2,14 Z</Geometry>
         <Geometry x:Key="Icon.FolderOpen">M2,9 L6,9 8,11 14,11 12,14 2,14 Z</Geometry>
         <Geometry x:Key="Icon.File">M4,2 L11,2 13,4 13,16 4,16 Z M11,2 L13,4</Geometry>
-
-        <ui:LevelToIndentConverter x:Key="LevelToIndentConverter" Indent="22"/>
 
         <Style x:Key="ToolbarButton" TargetType="Button">
             <Setter Property="Width" Value="26"/>
@@ -83,7 +86,7 @@
                                 <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource Brush.Primary.Pressed}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" TargetName="border" Value="0.6"/>
+                                <Setter TargetName="border" Property="Opacity" Value="0.6"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -190,7 +193,7 @@
                             <Border x:Name="HeaderBorder"
                                     Background="Transparent"
                                     Cursor="Hand"
-                                    Padding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Converter={StaticResource LevelToIndentConverter}}">
+                                    Padding="{Binding IndentMargin}">
                                 <ContentPresenter ContentSource="Header"/>
                             </Border>
                             <ItemsPresenter x:Name="ItemsHost" Grid.Row="1"/>
@@ -217,7 +220,7 @@
                     <ColumnDefinition Width="22"/>
                     <ColumnDefinition Width="20"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto" SharedSizeGroup="ActionsCol"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="6"/>
                 </Grid.ColumnDefinitions>
 
@@ -360,12 +363,15 @@
                 <Button Style="{StaticResource ToolbarButton}" ToolTip="Reset rules" Click="Reset_Click">
                     <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE894;"/>
                 </Button>
-                <Button Style="{StaticResource ToolbarButton}" ToolTip="Reset to defaults" Click="Defaults_Click">
-                    <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE777;"/>
+                <Button x:Name="HideAllBtn" Style="{StaticResource ToolbarButton}" ToolTip="Hide/Show all in current folder" Click="HideAll_Click">
+                    <TextBlock x:Name="HideAllIcon" FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE890;"/>
                 </Button>
                 <ToggleButton x:Name="WrapToggle" Style="{StaticResource IconToggleInline}" ToolTip="Toggle wrap" Click="WrapToggle_Click">
                     <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE7C2;"/>
                 </ToggleButton>
+                <Button x:Name="SettingsBtn" Style="{StaticResource ToolbarButton}" ToolTip="Settings" Click="Settings_Click">
+                    <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE713;"/>
+                </Button>
             </StackPanel>
         </DockPanel>
 
@@ -397,13 +403,20 @@
 
         <TreeView x:Name="Tree"
                   Grid.Row="2"
-                  Grid.IsSharedSizeScope="True"
                   ItemsSource="{Binding RootNodes}"
                   BorderThickness="0"
                   Background="{DynamicResource Brush.PanelBg}"
                   VirtualizingStackPanel.IsVirtualizing="True"
                   VirtualizingStackPanel.VirtualizationMode="Recycling"
                   ScrollViewer.CanContentScroll="True"
-                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <TreeView.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel IsVirtualizing="True"
+                                            VirtualizationMode="Recycling"
+                                            ScrollUnit="Pixel"/>
+                </ItemsPanelTemplate>
+            </TreeView.ItemsPanel>
+        </TreeView>
     </Grid>
 </UserControl>

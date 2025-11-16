@@ -1,5 +1,4 @@
-<!-- UI/RepoExplorerControl.xaml -->
-<UserControl x:Class="repotxt.UI.RepoExplorerControl"
+﻿<UserControl x:Class="repotxt.UI.RepoExplorerControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="clr-namespace:repotxt.UI"
@@ -8,6 +7,7 @@
              Foreground="{DynamicResource Brush.Text}">
     <UserControl.Resources>
         <SolidColorBrush x:Key="Brush.PanelBg" Color="#1E1E1E"/>
+        <SolidColorBrush x:Key="Brush.NavBarBg" Color="#151515"/>
         <SolidColorBrush x:Key="Brush.Text" Color="#D0D0D0"/>
         <SolidColorBrush x:Key="Brush.Border" Color="#2D2D30"/>
         <SolidColorBrush x:Key="Brush.ButtonBg" Color="#2D2D30"/>
@@ -83,7 +83,7 @@
                                 <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource Brush.Primary.Pressed}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="border" Property="Opacity" Value="0.6"/>
+                                <Setter Property="Opacity" TargetName="border" Value="0.6"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -95,7 +95,6 @@
             <Setter Property="Width" Value="28"/>
             <Setter Property="Height" Value="22"/>
             <Setter Property="Padding" Value="2"/>
-            <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
@@ -103,7 +102,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                        <Border Background="Transparent" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                     </ControlTemplate>
@@ -138,10 +137,48 @@
             </Style.Triggers>
         </Style>
 
+        <ContextMenu x:Key="NodeContextMenu"
+                     DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+            <MenuItem Command="{x:Static ui:RepoExplorerControl.NavigateToCommand}"
+                      CommandParameter="{Binding}">
+                <MenuItem.Header>
+                    <TextBlock Text="Перейти"/>
+                </MenuItem.Header>
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsDirectory}" Value="False">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+            <MenuItem Command="{x:Static ui:RepoExplorerControl.ToggleIncludeCommand}"
+                      CommandParameter="{Binding}">
+                <MenuItem.Header>
+                    <TextBlock>
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="Скрыть"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsIncluded}" Value="False">
+                                        <Setter Property="Text" Value="Показать"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </MenuItem.Header>
+            </MenuItem>
+        </ContextMenu>
+
         <Style TargetType="TreeViewItem">
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Margin" Value="0"/>
+            <Setter Property="ContextMenu" Value="{StaticResource NodeContextMenu}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TreeViewItem">
@@ -172,7 +209,6 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="TreeViewItem_PreviewMouseLeftButtonDown"/>
         </Style>
 
         <HierarchicalDataTemplate DataType="{x:Type ui:NodeVM}" ItemsSource="{Binding Children}">
@@ -308,6 +344,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
@@ -332,8 +369,34 @@
             </StackPanel>
         </DockPanel>
 
+        <Border Grid.Row="1"
+                Background="{DynamicResource Brush.NavBarBg}"
+                Margin="6,0,6,4"
+                Padding="6,2">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button x:Name="BackBtn"
+                        Style="{StaticResource ToolbarButton}"
+                        Width="26"
+                        Height="24"
+                        ToolTip="Back"
+                        Click="Back_Click">
+                    <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="13" Text="&#xE72B;"/>
+                </Button>
+                <TextBlock x:Name="CurrentPathText"
+                           Grid.Column="1"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           TextWrapping="NoWrap"/>
+            </Grid>
+        </Border>
+
         <TreeView x:Name="Tree"
-                  Grid.Row="1"
+                  Grid.Row="2"
                   Grid.IsSharedSizeScope="True"
                   ItemsSource="{Binding RootNodes}"
                   BorderThickness="0"

@@ -302,22 +302,172 @@ namespace repotxt.Core
             SaveState();
         }
 
-        public async Task<string> GenerateReportAsync()
+        public async Task<string> GenerateReportAsync(string? rootOverride = null)
         {
             if (string.IsNullOrEmpty(_solutionRoot) || !Directory.Exists(_solutionRoot))
                 return "No solution opened";
 
+            string baseRoot;
+            if (string.IsNullOrEmpty(rootOverride) || !Directory.Exists(rootOverride))
+            {
+                baseRoot = _solutionRoot;
+            }
+            else
+            {
+                try
+                {
+                    var candidate = Norm(rootOverride);
+                    if (IsDescendantOf(candidate, _solutionRoot))
+                        baseRoot = candidate;
+                    else
+                        baseRoot = _solutionRoot;
+                }
+                catch
+                {
+                    baseRoot = _solutionRoot;
+                }
+            }
+
+            var includesSnap = new HashSet<string>(
+                _manualIncludes.Where(p => IsDescendantOf(p, baseRoot)),
+                StringComparer.OrdinalIgnoreCase);
+
+            var excludesSnap = new HashSet<string>(
+                _manualExcludes.Where(p => IsDescendantOf(p, baseRoot)),
+                StringComparer.OrdinalIgnoreCase);
+
+            bool IsPathEffectivelyExcludedLocal(string fullPath)
+            {
+                var p = Norm(fullPath);
+                if (includesSnap.Contains(p)) return false;
+
+                var cur = p;
+                while (!string.IsNullOrEmpty(cur))
+                {
+                    if (excludesSnap.Contains(cur)) return true;
+                    var parent = Path.GetDirectoryName(cur);
+                    if (string.IsNullOrEmpty(parent) || parent == cur) break;
+                    cur = parent;
+                }
+
+                if (IsAutoExcludedPath(p)) return true;
+
+                return false;
+            }
+
+            bool FolderContainsManualIncludesLocal(string folderPath)
+            {
+                var f = Norm(folderPath) + Path.DirectorySeparatorChar;
+                foreach (var inc in includesSnap)
+                {
+                    if ((inc + Path.DirectorySeparatorChar).StartsWith(f, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+                return false;
+            }
+
+            bool IsFolderVisuallyExcludedLocal(string folderPath)
+            {
+                if (ShouldHideDirectory(folderPath)) return true;
+                if (!IsPathEffectivelyExcludedLocal(folderPath)) return false;
+                return !FolderContainsManualIncludesLocal(folderPath);
+            }
+
+            IEnumerable<string> EnumerateVisibleFilesLocal(string root)
+            {
+                var stack = new Stack<string>();
+                stack.Push(root);
+
+                while (stack.Count > 0)
+                {
+                    var dir = stack.Pop();
+
+                    if (ShouldHideDirectory(dir)) continue;
+                    if (IsFolderVisuallyExcludedLocal(dir)) continue;
+
+                    IEnumerable<string> files = Enumerable.Empty<string>();
+                    try { files = Directory.EnumerateFiles(dir); } catch { }
+
+                    foreach (var f in files)
+                    {
+                        if (ShouldHideFile(f)) continue;
+                        if (IsPathEffectivelyExcludedLocal(f)) continue;
+                        yield return f;
+                    }
+
+                    IEnumerable<string> subdirs = Enumerable.Empty<string>();
+                    try { subdirs = Directory.EnumerateDirectories(dir); } catch { }
+
+                    foreach (var sd in subdirs) stack.Push(sd);
+                }
+            }
+
+            void BuildFlatStructureLocal(string root, List<string> result)
+            {
+                void Walk(string dir)
+                {
+                    if (ShouldHideDirectory(dir)) return;
+
+                    var entries = new List<(string path, bool isDir)>();
+                    try { entries.AddRange(Directory.EnumerateDirectories(dir).Select(d => (d, true))); } catch { }
+                    try { entries.AddRange(Directory.EnumerateFiles(dir).Select(f => (f, false))); } catch { }
+
+                    entries.Sort((a, b) =>
+                    {
+                        var byType = (a.isDir ? 0 : 1).CompareTo(b.isDir ? 0 : 1);
+                        return byType != 0 ? byType : StringComparer.OrdinalIgnoreCase.Compare(
+                            Path.GetFileName(a.path), Path.GetFileName(b.path));
+                    });
+
+                    foreach (var (path, isDir) in entries)
+                    {
+                        if (isDir)
+                        {
+                            if (!IsFolderVisuallyExcludedLocal(path))
+                            {
+                                var rel = ToPosix(Rel(path)) + "/";
+                                result.Add(rel);
+                                Walk(path);
+                            }
+                            else if (FolderContainsManualIncludesLocal(path))
+                            {
+                                Walk(path);
+                            }
+                        }
+                        else
+                        {
+                            if (ShouldHideFile(path)) continue;
+                            if (IsPathEffectivelyExcludedLocal(path)) continue;
+                            var rel = ToPosix(Rel(path));
+                            result.Add(rel);
+                        }
+                    }
+                }
+                Walk(root);
+            }
+
             var sb = new StringBuilder();
             var name = _solutionName ?? new DirectoryInfo(_solutionRoot).Name;
 
-            var flat = new List<string>();
-            BuildFlatStructure(_solutionRoot, flat);
+            string headerName;
+            if (Norm(baseRoot).Equals(Norm(_solutionRoot), StringComparison.OrdinalIgnoreCase))
+            {
+                headerName = name;
+            }
+            else
+            {
+                var rel = ToPosix(Rel(baseRoot)).TrimEnd('/');
+                headerName = $"{name} /{rel.TrimStart('/')}";
+            }
 
-            sb.AppendLine($"Folder Structure: {name}");
+            var flat = new List<string>();
+            BuildFlatStructureLocal(baseRoot, flat);
+
+            sb.AppendLine($"Folder Structure: {headerName}");
             foreach (var line in flat) sb.AppendLine(line);
             sb.AppendLine();
 
-            var files = EnumerateVisibleFiles(_solutionRoot).ToList();
+            var files = EnumerateVisibleFilesLocal(baseRoot).ToList();
             foreach (var file in files)
             {
                 var rel = ToPosix(Rel(file));
@@ -331,7 +481,6 @@ namespace repotxt.Core
 
             return await Task.FromResult(sb.ToString());
         }
-
         private string Norm(string path)
         {
             try { path = Path.GetFullPath(path); } catch { }

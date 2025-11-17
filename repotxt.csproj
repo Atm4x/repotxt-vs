@@ -62,6 +62,9 @@
     <Compile Include="UI\RepoExplorerControl.xaml.cs">
       <DependentUpon>RepoExplorerControl.xaml</DependentUpon>
     </Compile>
+    <Compile Include="UI\RepoSettingsWindow.xaml.cs">
+      <DependentUpon>RepoSettingsWindow.xaml</DependentUpon>
+    </Compile>
     <Compile Include="UI\RepoToolWindow.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -93,11 +96,15 @@
     <Page Include="UI\RepoExplorerControl.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="UI\RepoSettingsWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="Resources\repotxt.png">
+    <Content Include="Resources\repotxt.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Resource>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <Content Include=".gitignore" />

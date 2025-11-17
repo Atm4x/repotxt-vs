@@ -261,7 +261,15 @@ namespace repotxt.UI
 
         private void Settings_Click(object sender, RoutedEventArgs e)
         {
-            // Заглушка: настройки ещё не реализованы
+            if (Core == null)
+                return;
+
+            var window = new RepoSettingsWindow(Core)
+            {
+                Owner = Application.Current?.MainWindow
+            };
+
+            window.ShowDialog();
         }
 
         private void Generate_Click(object sender, RoutedEventArgs e)

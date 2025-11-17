@@ -42,11 +42,25 @@ namespace repotxt.Core
         public bool CanUndo => _undoStack.Count > 0;
         public bool CanRedo => _redoStack.Count > 0;
 
-        private static readonly HashSet<string> HiddenDirNames = new(StringComparer.OrdinalIgnoreCase) { ".git", ".vs", ".idea", ".vscode" };
-        private static readonly string[] HiddenFileGlobs = new[] { "*.sln", "*.slnx", "*.suo", "*.user", ".gitignore" };
+        private static readonly string[] DefaultHiddenDirNames = new[]
+        {
+            ".git", ".vs", ".idea", ".vscode"
+        };
 
-        private static readonly HashSet<string> AutoIgnoreDirNames = new(StringComparer.OrdinalIgnoreCase) { "bin", "obj", "node_modules", "packages", "dist", "out", "build" };
-        private static readonly string[] AutoIgnoreFileGlobs = new[] { "*.meta", "*.tmp", "*.log", "*.lock", "*.cache", "*.map", "*.min.*" };
+        private static readonly string[] DefaultHiddenFileGlobs = new[]
+        {
+            "*.sln", "*.slnx", "*.suo", "*.user", ".gitignore"
+        };
+
+        private static readonly string[] DefaultAutoIgnoreDirNames = new[]
+        {
+            "bin", "obj", "node_modules", "packages", "dist", "out", "build"
+        };
+
+        private static readonly string[] DefaultAutoIgnoreFileGlobs = new[]
+        {
+            "*.meta", "*.tmp", "*.log", "*.lock", "*.cache", "*.map", "*.min.*"
+        };
 
         private static readonly HashSet<string> BinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -54,7 +68,13 @@ namespace repotxt.Core
             ".doc",".docx",".xls",".xlsx",".ppt",".pptx",".bin",".class",".obj"
         };
 
+        private readonly HashSet<string> _hiddenDirNames = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<string> _hiddenFileGlobs = new();
+        private readonly HashSet<string> _autoIgnoreDirNames = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<string> _autoIgnoreFileGlobs = new();
+
         private bool _wrapLongLines;
+
         private readonly List<GitIgnoreRule> _gitRules = new();
         private bool _respectGitIgnore = true;
 
@@ -84,6 +104,23 @@ namespace repotxt.Core
                 SolutionChanged?.Invoke(this, EventArgs.Empty);
             }
         }
+
+        public bool RespectGitIgnore
+        {
+            get => _respectGitIgnore;
+            set
+            {
+                if (_respectGitIgnore == value) return;
+                _respectGitIgnore = value;
+                SaveState();
+                SolutionChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        public IReadOnlyCollection<string> HiddenDirPatterns => _hiddenDirNames;
+        public IReadOnlyList<string> HiddenFilePatterns => _hiddenFileGlobs;
+        public IReadOnlyCollection<string> AutoIgnoreDirPatterns => _autoIgnoreDirNames;
+        public IReadOnlyList<string> AutoIgnoreFilePatterns => _autoIgnoreFileGlobs;
 
         public event EventHandler? SolutionChanged;
 
@@ -150,6 +187,11 @@ namespace repotxt.Core
                 _manualIncludes.Clear();
                 _manualExcludes.Clear();
                 _wrapLongLines = false;
+                _respectGitIgnore = true;
+                _hiddenDirNames.Clear();
+                _hiddenFileGlobs.Clear();
+                _autoIgnoreDirNames.Clear();
+                _autoIgnoreFileGlobs.Clear();
                 _gitRules.Clear();
                 SolutionChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -187,6 +229,11 @@ namespace repotxt.Core
             public List<string>? Excludes { get; set; }
             public bool WrapLongLines { get; set; }
             public bool RespectGitIgnore { get; set; }
+
+            public List<string>? HiddenDirNames { get; set; }
+            public List<string>? HiddenFileGlobs { get; set; }
+            public List<string>? AutoIgnoreDirNames { get; set; }
+            public List<string>? AutoIgnoreFileGlobs { get; set; }
         }
 
         private static string BuildStatePath(string solutionRoot)
@@ -200,6 +247,23 @@ namespace repotxt.Core
             return Path.Combine(dir, $"{name}.json");
         }
 
+        private void LoadDefaultPatterns()
+        {
+            _hiddenDirNames.Clear();
+            foreach (var d in DefaultHiddenDirNames)
+                _hiddenDirNames.Add(d);
+
+            _hiddenFileGlobs.Clear();
+            _hiddenFileGlobs.AddRange(DefaultHiddenFileGlobs);
+
+            _autoIgnoreDirNames.Clear();
+            foreach (var d in DefaultAutoIgnoreDirNames)
+                _autoIgnoreDirNames.Add(d);
+
+            _autoIgnoreFileGlobs.Clear();
+            _autoIgnoreFileGlobs.AddRange(DefaultAutoIgnoreFileGlobs);
+        }
+
         private void LoadState()
         {
             try
@@ -208,6 +272,8 @@ namespace repotxt.Core
                 _manualExcludes.Clear();
                 _wrapLongLines = false;
                 _respectGitIgnore = true;
+
+                LoadDefaultPatterns();
 
                 if (string.IsNullOrEmpty(_stateStorePath)) return;
                 if (!File.Exists(_stateStorePath)) return;
@@ -219,8 +285,53 @@ namespace repotxt.Core
                     foreach (var p in state.Includes) _manualIncludes.Add(Norm(p));
                 if (state.Excludes != null)
                     foreach (var p in state.Excludes) _manualExcludes.Add(Norm(p));
+
                 _wrapLongLines = state.WrapLongLines;
                 _respectGitIgnore = state.RespectGitIgnore;
+
+                if (state.HiddenDirNames != null)
+                {
+                    _hiddenDirNames.Clear();
+                    foreach (var d in state.HiddenDirNames)
+                    {
+                        var t = d?.Trim();
+                        if (!string.IsNullOrEmpty(t))
+                            _hiddenDirNames.Add(t);
+                    }
+                }
+
+                if (state.HiddenFileGlobs != null)
+                {
+                    _hiddenFileGlobs.Clear();
+                    foreach (var g in state.HiddenFileGlobs)
+                    {
+                        var t = g?.Trim();
+                        if (!string.IsNullOrEmpty(t))
+                            _hiddenFileGlobs.Add(t);
+                    }
+                }
+
+                if (state.AutoIgnoreDirNames != null)
+                {
+                    _autoIgnoreDirNames.Clear();
+                    foreach (var d in state.AutoIgnoreDirNames)
+                    {
+                        var t = d?.Trim();
+                        if (!string.IsNullOrEmpty(t))
+                            _autoIgnoreDirNames.Add(t);
+                    }
+                }
+
+                if (state.AutoIgnoreFileGlobs != null)
+                {
+                    _autoIgnoreFileGlobs.Clear();
+                    foreach (var g in state.AutoIgnoreFileGlobs)
+                    {
+                        var t = g?.Trim();
+                        if (!string.IsNullOrEmpty(t))
+                            _autoIgnoreFileGlobs.Add(t);
+                    }
+                }
             }
             catch { }
         }
@@ -230,19 +341,30 @@ namespace repotxt.Core
             try
             {
                 if (string.IsNullOrEmpty(_stateStorePath)) return;
+
                 var snapshotIncludes = _manualIncludes.ToList();
                 var snapshotExcludes = _manualExcludes.ToList();
                 var wrap = _wrapLongLines;
                 var respect = _respectGitIgnore;
+
+                var hiddenDirs = _hiddenDirNames.ToList();
+                var hiddenFiles = _hiddenFileGlobs.ToList();
+                var autoDirs = _autoIgnoreDirNames.ToList();
+                var autoFiles = _autoIgnoreFileGlobs.ToList();
+
                 var path = _stateStorePath;
 
-                var json = Newtonsoft.Json.JsonConvert.SerializeObject(new StateModel
+                var json = JsonConvert.SerializeObject(new StateModel
                 {
                     Includes = snapshotIncludes,
                     Excludes = snapshotExcludes,
                     WrapLongLines = wrap,
-                    RespectGitIgnore = respect
-                }, Newtonsoft.Json.Formatting.Indented);
+                    RespectGitIgnore = respect,
+                    HiddenDirNames = hiddenDirs,
+                    HiddenFileGlobs = hiddenFiles,
+                    AutoIgnoreDirNames = autoDirs,
+                    AutoIgnoreFileGlobs = autoFiles
+                }, Formatting.Indented);
 
                 _ = Task.Run(() =>
                 {
@@ -256,6 +378,34 @@ namespace repotxt.Core
                 });
             }
             catch { }
+        }
+
+        public void UpdateFilteringPatterns(
+            IEnumerable<string> hiddenDirPatterns,
+            IEnumerable<string> hiddenFilePatterns,
+            IEnumerable<string> autoIgnoreDirPatterns,
+            IEnumerable<string> autoIgnoreFilePatterns)
+        {
+            static IEnumerable<string> Normalize(IEnumerable<string> src) =>
+                src.Select(s => s?.Trim() ?? string.Empty)
+                   .Where(s => !string.IsNullOrEmpty(s));
+
+            _hiddenDirNames.Clear();
+            foreach (var d in Normalize(hiddenDirPatterns))
+                _hiddenDirNames.Add(d);
+
+            _hiddenFileGlobs.Clear();
+            _hiddenFileGlobs.AddRange(Normalize(hiddenFilePatterns));
+
+            _autoIgnoreDirNames.Clear();
+            foreach (var d in Normalize(autoIgnoreDirPatterns))
+                _autoIgnoreDirNames.Add(d);
+
+            _autoIgnoreFileGlobs.Clear();
+            _autoIgnoreFileGlobs.AddRange(Normalize(autoIgnoreFilePatterns));
+
+            SaveState();
+            SolutionChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public void ResetManualRules()
@@ -281,6 +431,8 @@ namespace repotxt.Core
             _manualExcludes.Clear();
             _wrapLongLines = false;
             _respectGitIgnore = true;
+
+            LoadDefaultPatterns();
             LoadGitIgnore();
             SaveState();
             SolutionChanged?.Invoke(this, EventArgs.Empty);
@@ -471,7 +623,7 @@ namespace repotxt.Core
                         {
                             if (!IsFolderVisuallyExcludedLocal(path))
                             {
-                                var rel = ToPosix(RelToBase(path)) + "/"; // CHANGED
+                                var rel = ToPosix(RelToBase(path)) + "/";
                                 result.Add(rel);
                                 Walk(path);
                             }
@@ -484,7 +636,7 @@ namespace repotxt.Core
                         {
                             if (ShouldHideFile(path)) continue;
                             if (IsPathEffectivelyExcludedLocal(path)) continue;
-                            var rel = ToPosix(RelToBase(path)); // CHANGED
+                            var rel = ToPosix(RelToBase(path));
                             result.Add(rel);
                         }
                     }
@@ -502,7 +654,6 @@ namespace repotxt.Core
             }
             else
             {
-                // Заголовок по-прежнему показывает путь от корня решения:
                 var rel = ToPosix(Rel(baseRoot)).TrimEnd('/');
                 headerName = $"{name} /{rel.TrimStart('/')}";
             }
@@ -517,7 +668,7 @@ namespace repotxt.Core
             var files = EnumerateVisibleFilesLocal(baseRoot).ToList();
             foreach (var file in files)
             {
-                var rel = ToPosix(RelToBase(file)); // CHANGED
+                var rel = ToPosix(RelToBase(file));
                 sb.AppendLine($"File: {rel}");
                 sb.Append("Content: ");
                 var content = ReadFileContent(file);
@@ -566,16 +717,19 @@ namespace repotxt.Core
             var p = Norm(fullPath);
             var isDir = Directory.Exists(p);
             if (_respectGitIgnore && IsIgnoredByGit(p, isDir)) return true;
+
             if (isDir)
             {
                 var dn = new DirectoryInfo(p).Name;
-                if (AutoIgnoreDirNames.Contains(dn)) return true;
+                if (_autoIgnoreDirNames.Contains(dn)) return true;
             }
             else
             {
                 var bn = Path.GetFileName(p);
-                foreach (var g in AutoIgnoreFileGlobs)
+
+                foreach (var g in _autoIgnoreFileGlobs)
                     if (GlobIsMatch(bn, g)) return true;
+
                 var ext = Path.GetExtension(p);
                 if (BinaryExtensions.Contains(ext)) return true;
             }
@@ -585,13 +739,13 @@ namespace repotxt.Core
         public bool ShouldHideDirectory(string dirPath)
         {
             var dn = new DirectoryInfo(dirPath).Name;
-            return HiddenDirNames.Contains(dn);
+            return _hiddenDirNames.Contains(dn);
         }
 
         public bool ShouldHideFile(string filePath)
         {
             var bn = Path.GetFileName(filePath);
-            foreach (var g in HiddenFileGlobs)
+            foreach (var g in _hiddenFileGlobs)
                 if (GlobIsMatch(bn, g)) return true;
             return false;
         }
@@ -847,7 +1001,6 @@ namespace repotxt.Core
             return ignored;
         }
 
-
         private ManualState CaptureManualState()
         {
             return new ManualState
@@ -879,6 +1032,7 @@ namespace repotxt.Core
             if (raiseEvent)
                 SolutionChanged?.Invoke(this, EventArgs.Empty);
         }
+
         public void Undo()
         {
             if (_undoStack.Count == 0) return;
@@ -896,6 +1050,5 @@ namespace repotxt.Core
             _undoStack.Push(current);
             RestoreManualState(next, true);
         }
-
     }
 }

@@ -1,22 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
-<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
+<PackageManifest Version="2.0.0"
+                 xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011"
+                 xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="repotxt.0f61883f-cd9f-4584-bdbe-f4fd95af8798" Version="1.0" Language="en-US" Publisher="artem dikarev" />
-    <DisplayName>repotxt</DisplayName>
-    <Description>Empty VSIX Project.</Description>
+    <Identity Id="repotxt.0f61883f-cd9f-4584-bdbe-f4fd95af8798"
+              Version="1.1"
+              Language="en-US"
+              Publisher="artem dikarev" />
+    <DisplayName>repotxt – Repository Analyzer</DisplayName>
+    <Description xml:space="preserve">
+repotxt adds a Repository Analyzer tool window and commands to Visual Studio.
+
+Features:
+• Tree view of your solution's folder structure, independent from Solution Explorer
+• Per-folder include/exclude with undo/redo
+• Respect .gitignore and additional auto-exclude rules
+• Per-solution settings for hidden/ignored folders and file patterns
+• Generate a text/markdown report that contains the folder structure and file contents
+    </Description>
+    <MoreInfo>https://github.com/your-account/repotxt</MoreInfo>
+    <Icon>Resources\repotxt.png</Icon>
+    <Tags>repository;report;markdown;solution;explorer;gitignore;tree</Tags>
   </Metadata>
+
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0, )">
       <ProductArchitecture>amd64</ProductArchitecture>
     </InstallationTarget>
   </Installation>
+
   <Dependencies>
-    <Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" d:Source="Manual" Version="[4.5,)" />
+    <Dependency Id="Microsoft.Framework.NDP"
+                DisplayName="Microsoft .NET Framework"
+                d:Source="Manual"
+                Version="[4.5,)" />
   </Dependencies>
+
   <Prerequisites>
-    <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[17.0, )" DisplayName="Visual Studio core editor" />
+    <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor"
+                  Version="[17.0, )"
+                  DisplayName="Visual Studio core editor" />
   </Prerequisites>
+
   <Assets>
-    <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
+    <Asset Type="Microsoft.VisualStudio.VsPackage"
+           d:Source="Project"
+           d:ProjectName="%CurrentProject%"
+           Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
   </Assets>
 </PackageManifest>
